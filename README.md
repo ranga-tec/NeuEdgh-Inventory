@@ -12,7 +12,7 @@ General inventory and retail ERP system adapted for supermarket operations.
 
 - Master data: items, brands, categories, UoMs, warehouses, customers, suppliers, taxes, currencies, payment types, and reorder settings
 - Procurement: purchase requisitions, RFQs, purchase orders, goods receipts, direct purchases, supplier invoices, and supplier returns
-- Sales and retail: sales invoices, counter stock issues, customer returns, counter-sales shortcuts
+- Sales and retail: sales invoices, counter stock issues, customer returns, counter-sales shortcuts, pack items, and pack-size selling
 - Retail utilities: airtime reloads and bill-payment transaction capture
 - Inventory: availability, on-hand inquiry, reorder alerts, stock adjustments, and stock transfers
 - Finance: chart of accounts, AR/AP, payments, petty cash funds, credit notes, and debit notes

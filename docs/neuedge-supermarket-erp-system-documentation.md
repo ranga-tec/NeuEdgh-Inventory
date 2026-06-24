@@ -9,6 +9,7 @@ This document defines the target system behavior for the supermarket version and
 - Item replenishment
 - Expiry date handling
 - FIFO stock issuing
+- Pack items
 - Bundle items
 - Promotion creation
 
@@ -27,6 +28,7 @@ The document is written as the working specification for product owners, develop
 - Goods receiving with expiry capture
 - Counter sales and sales invoices
 - Airtime and bill payment transaction recording
+- Pack item setup and pack-size selling
 - Bundle item setup and selling
 - Promotion setup, approval, activation, and expiry
 - Stock ledger, valuation, expiry, replenishment, promotion, and sales reports
@@ -63,6 +65,7 @@ Historical service tables may remain in the database while older migrations stil
 - Sales/POS
 - Retail utilities
 - Replenishment
+- Pack item management
 - Promotions
 - Bundle management
 - Finance
@@ -84,6 +87,8 @@ Each supermarket product should support:
 - Category and subcategory
 - Unit of measure
 - Pack size
+- Base unit and pack conversion
+- Inner pack, case, carton, and loose-unit selling rules
 - Tax code
 - Costing method
 - Tracking type: none, batch, serial, expiry, or batch plus expiry
@@ -158,6 +163,7 @@ Common movement types:
 - Stock adjustment
 - Stock transfer out
 - Stock transfer in
+- Pack conversion
 - Bundle component issue
 - Bundle finished item receipt, if pre-assembled
 - Promotion/free item issue
@@ -457,9 +463,202 @@ Manual batch/layer selection should require permission and audit trail:
 - Stock ledger records the actual consumed layer.
 - Manual override requires permission and reason.
 
-## 9. Bundle Items
+## 9. Pack Items
 
 ### 9.1 Objective
+
+Pack items allow the supermarket to buy, stock, transfer, and sell the same product in different pack sizes while maintaining one reliable inventory position.
+
+Examples:
+
+- 1 bottle, 6-pack, and 24-bottle carton of soft drinks
+- Single soap, 3-pack soap, and 12-pack case
+- Loose biscuit packet and display box
+- 1 kg rice bag and 5 kg rice bag, when sold as distinct SKUs
+- Cigarette stick, pack, and carton, where regulation allows
+
+Pack handling is different from bundle handling. A pack is the same item in a different quantity or packaging unit. A bundle is a combination of different component items sold together.
+
+### 9.2 Pack Models
+
+Supported pack models:
+
+- Same item, multiple UoMs: one item has base unit and pack conversions.
+- Separate sellable pack SKUs: each pack has its own barcode and price but converts to a base item.
+- Break-pack workflow: a carton or case is opened and converted into loose units.
+- Supplier purchase pack: purchase in cases/cartons while selling in units.
+
+Recommended first implementation: same item with multiple UoMs and separate barcode per pack size.
+
+### 9.3 Pack Master Data
+
+Pack item fields:
+
+- Item
+- Pack code
+- Pack barcode
+- Pack name
+- Base unit quantity
+- Pack unit of measure
+- Purchase allowed flag
+- Sale allowed flag
+- Transfer allowed flag
+- Default purchase pack flag
+- Default sales pack flag
+- Price
+- Tax code override, optional
+- Active/inactive status
+
+Example:
+
+| Pack | Barcode | Base quantity |
+| --- | --- | --- |
+| Soft drink single bottle | 479000000001 | 1 bottle |
+| Soft drink 6-pack | 479000000006 | 6 bottles |
+| Soft drink carton | 479000000024 | 24 bottles |
+
+### 9.4 Stock Keeping Rule
+
+The system should keep stock in base units internally.
+
+Example:
+
+- Receive 10 cartons.
+- 1 carton = 24 bottles.
+- System stores 240 bottles as stock quantity.
+- User can still view it as 10 cartons, 40 six-packs, or 240 bottles.
+
+This avoids separate stock balances for the same product and prevents mismatch between carton stock and loose-unit stock.
+
+### 9.5 Purchasing Packs
+
+Purchase documents should support supplier pack selection:
+
+- Purchase unit
+- Pack quantity
+- Base quantity conversion
+- Unit cost per pack
+- Unit cost per base unit
+- Supplier barcode or supplier item code
+
+Example:
+
+- Purchase quantity: 5 cartons
+- Carton conversion: 24 bottles
+- Base quantity received: 120 bottles
+- Carton cost: 7,200
+- Base unit cost: 300 per bottle
+
+### 9.6 Receiving Packs with Expiry
+
+For expiry-tracked pack items:
+
+- Expiry is captured once per received pack/batch line.
+- Converted base quantity inherits the same batch and expiry.
+- FIFO/FEFO stock layers store base quantity, batch, expiry, received date, and cost.
+
+Example:
+
+- Receive 3 cartons of yogurt drinks.
+- 1 carton = 12 bottles.
+- Expiry date = 2026-07-05.
+- Stock layer quantity = 36 bottles with expiry 2026-07-05.
+
+### 9.7 Selling Packs
+
+POS should allow scanning any active pack barcode:
+
+- Single barcode sells 1 base unit.
+- Six-pack barcode sells 6 base units.
+- Carton barcode sells 24 base units.
+
+The sales document should show the scanned pack and quantity, while inventory deduction uses base quantity.
+
+### 9.8 Pack Pricing
+
+Each pack can have its own price:
+
+- Single bottle: 350
+- 6-pack: 1,950
+- Carton: 7,200
+
+The system should not calculate pack price only from base unit price unless configured to do so. Supermarkets often set independent prices by pack size.
+
+### 9.9 Break-Pack Workflow
+
+If the business wants controlled conversion from carton stock to loose-unit display stock, the system should support a break-pack document:
+
+1. User selects source pack or stock layer.
+2. User enters pack quantity to break.
+3. System calculates resulting base-unit quantity.
+4. User selects destination bin, such as sales floor.
+5. Posting records stock movement and audit trail.
+
+If stock is already held only in base units, break-pack may be optional and used mainly for operational tracking.
+
+### 9.10 Pack Replenishment
+
+Replenishment should recommend purchase packs, not only base units.
+
+Example:
+
+- Required base quantity: 50 bottles.
+- Preferred supplier pack: carton of 24.
+- Recommended purchase quantity: 3 cartons.
+- Resulting base quantity: 72 bottles.
+
+Replenishment should show both:
+
+- Recommended pack quantity
+- Equivalent base quantity
+
+### 9.11 Pack FIFO/FEFO Rules
+
+FIFO/FEFO allocation should consume base-unit stock layers. When a pack is sold, the system allocates the converted base quantity.
+
+Example:
+
+- Customer buys 1 six-pack.
+- Required base quantity = 6 bottles.
+- FEFO allocates 6 bottles from earliest valid expiry layer.
+
+If one pack sale spans multiple layers, the sales trace should record all consumed layers.
+
+### 9.12 Pack Promotions
+
+Promotions may apply to:
+
+- Specific pack barcode
+- All packs of an item
+- Minimum base quantity
+- Buy one carton, get single item free
+- Case discount
+
+Promotion rules must clearly define whether the offer applies to one pack size or every pack of the same item.
+
+### 9.13 Pack Reports
+
+- Pack Sales Report
+- Pack Margin Report
+- Pack Conversion Report
+- Break-Pack Audit Report
+- Supplier Pack Purchase Report
+- Pack Barcode List
+
+### 9.14 Pack Acceptance Criteria
+
+- User can define multiple pack sizes for an item.
+- Each pack can have a separate barcode and price.
+- Purchases can be entered in supplier packs.
+- Stock is stored and costed in base units.
+- POS can sell by scanning pack barcode.
+- FIFO/FEFO consumes the correct converted base quantity.
+- Replenishment recommends supplier pack quantities.
+- Reports show both pack quantity and equivalent base quantity.
+
+## 10. Bundle Items
+
+### 10.1 Objective
 
 Bundle items allow the supermarket to sell multiple items as one sellable product, for example:
 
@@ -469,7 +668,7 @@ Bundle items allow the supermarket to sell multiple items as one sellable produc
 - Festival grocery pack
 - Rice plus dhal family pack
 
-### 9.2 Bundle Types
+### 10.2 Bundle Types
 
 Supported bundle models:
 
@@ -479,7 +678,7 @@ Supported bundle models:
 
 Recommended first implementation: dynamic bundle.
 
-### 9.3 Bundle Master Data
+### 10.3 Bundle Master Data
 
 Bundle header:
 
@@ -503,7 +702,7 @@ Bundle components:
 - Substitute group, optional
 - Component cost contribution
 
-### 9.4 Bundle Availability
+### 10.4 Bundle Availability
 
 Available bundle quantity is calculated as:
 
@@ -518,7 +717,7 @@ Example:
 - Soft drinks available: 7
 - Bundle availability: 7
 
-### 9.5 Bundle Sale Workflow
+### 10.5 Bundle Sale Workflow
 
 1. Cashier scans bundle barcode.
 2. POS adds one bundle line.
@@ -528,7 +727,7 @@ Example:
 6. On posting, stock ledger issues component items.
 7. Sales document stores both bundle header and component issue trace.
 
-### 9.6 Bundle Costing
+### 10.6 Bundle Costing
 
 Bundle cost should be calculated from component issue cost:
 
@@ -536,7 +735,7 @@ Bundle cost should be calculated from component issue cost:
 - Total bundle cost is sum of component costs.
 - Gross profit is bundle selling price minus component cost.
 
-### 9.7 Bundle Returns
+### 10.7 Bundle Returns
 
 Return policy options:
 
@@ -546,14 +745,14 @@ Return policy options:
 
 Recommended default: full bundle return only for simple cashier workflow.
 
-### 9.8 Bundle Reports
+### 10.8 Bundle Reports
 
 - Bundle Sales Report
 - Bundle Profitability Report
 - Bundle Component Usage Report
 - Bundle Availability Report
 
-### 9.9 Bundle Acceptance Criteria
+### 10.9 Bundle Acceptance Criteria
 
 - User can create a bundle with component quantities.
 - POS can sell a bundle by barcode.
@@ -561,13 +760,13 @@ Recommended default: full bundle return only for simple cashier workflow.
 - Bundle availability is calculated from component stock.
 - Bundle profitability uses actual issued component costs.
 
-## 10. Promotion Creation
+## 11. Promotion Creation
 
-### 10.1 Objective
+### 11.1 Objective
 
 Promotion creation allows supermarket users to define discount and offer rules that automatically apply during sales within approved dates and conditions.
 
-### 10.2 Promotion Types
+### 11.2 Promotion Types
 
 Initial promotion types:
 
@@ -589,7 +788,7 @@ Future promotion types:
 - Time-of-day promotion
 - Branch-specific promotion
 
-### 10.3 Promotion Header
+### 11.3 Promotion Header
 
 Fields:
 
@@ -608,7 +807,7 @@ Fields:
 - Status
 - Approval information
 
-### 10.4 Promotion Lines
+### 11.4 Promotion Lines
 
 Promotion line fields depend on promotion type:
 
@@ -625,7 +824,7 @@ Promotion line fields depend on promotion type:
 - Maximum uses per transaction
 - Maximum uses per customer
 
-### 10.5 Promotion Statuses
+### 11.5 Promotion Statuses
 
 - Draft
 - Pending Approval
@@ -637,7 +836,7 @@ Promotion line fields depend on promotion type:
 
 Only approved promotions can become active.
 
-### 10.6 Promotion Validation
+### 11.6 Promotion Validation
 
 The system should validate:
 
@@ -648,7 +847,7 @@ The system should validate:
 - User has permission to approve promotions.
 - Promotion does not sell below minimum margin unless allowed.
 
-### 10.7 Promotion Application at POS
+### 11.7 Promotion Application at POS
 
 1. Cashier scans items.
 2. System identifies active promotions by date/time, store, item, category, brand, and customer.
@@ -657,7 +856,7 @@ The system should validate:
 5. Discount is calculated and shown clearly.
 6. Sales document stores promotion code, discount amount, and promotion snapshot.
 
-### 10.8 Promotion Conflict Rules
+### 11.8 Promotion Conflict Rules
 
 If multiple promotions apply:
 
@@ -666,7 +865,7 @@ If multiple promotions apply:
 - If stackable is true, additional promotions may apply until max discount is reached.
 - Manager override may be required for below-cost selling.
 
-### 10.9 Promotion Reports
+### 11.9 Promotion Reports
 
 - Active Promotions Report
 - Promotion Sales Report
@@ -675,7 +874,7 @@ If multiple promotions apply:
 - Expired Promotions Report
 - Supplier-Funded Promotion Claim Report
 
-### 10.10 Promotion Acceptance Criteria
+### 11.10 Promotion Acceptance Criteria
 
 - Store Manager can create a draft promotion.
 - Admin or authorized manager can approve promotions.
@@ -684,7 +883,7 @@ If multiple promotions apply:
 - Sales documents retain promotion traceability.
 - Reports show sales, discount, and margin impact per promotion.
 
-## 11. Retail Utility Payments
+## 12. Retail Utility Payments
 
 The current system includes retail utility payment capture for:
 
@@ -699,21 +898,22 @@ Required operational behavior:
 - Allow reversal only with permission and reason.
 - Provide daily cashier utility transaction report.
 
-## 12. Finance and Accounting Integration
+## 13. Finance and Accounting Integration
 
-### 12.1 Posting Principles
+### 13.1 Posting Principles
 
 Every posted operational transaction should create financial or inventory impact:
 
 - Purchase receipt increases inventory value.
 - Supplier invoice records AP liability.
 - Sale records revenue, tax, COGS, and inventory reduction.
+- Pack sale records revenue at pack price and inventory reduction in base units.
 - Expiry write-off records inventory reduction and write-off expense.
 - Promotion discount records sales discount.
 - Bundle sale records revenue and component COGS.
 - Utility payment records cash movement and fee/income according to configuration.
 
-### 12.2 Required Accounts
+### 13.2 Required Accounts
 
 Configuration should include:
 
@@ -729,7 +929,7 @@ Configuration should include:
 - Promotion funding receivable account, optional
 - Utility commission income account
 
-## 13. Audit and Controls
+## 14. Audit and Controls
 
 All sensitive actions must be audited:
 
@@ -740,6 +940,7 @@ All sensitive actions must be audited:
 - Expiry write-off approval
 - Replenishment recommendation adjustment
 - Purchase document creation from replenishment
+- Pack conversion and pack barcode changes
 - Bundle setup changes
 - Price changes
 - Stock adjustment
@@ -757,9 +958,9 @@ Audit records should include:
 - Reason
 - Approval reference, when applicable
 
-## 14. API Design
+## 15. API Design
 
-### 14.1 Replenishment APIs
+### 15.1 Replenishment APIs
 
 - `GET /api/replenishment/recommendations`
 - `POST /api/replenishment/runs`
@@ -768,7 +969,7 @@ Audit records should include:
 - `POST /api/replenishment/runs/{id}/create-purchase-order`
 - `POST /api/replenishment/runs/{id}/create-transfer-request`
 
-### 14.2 Expiry APIs
+### 15.2 Expiry APIs
 
 - `GET /api/inventory/expiry/near-expiry`
 - `GET /api/inventory/expiry/expired`
@@ -776,7 +977,18 @@ Audit records should include:
 - `POST /api/inventory/expiry/write-offs/{id}/approve`
 - `POST /api/inventory/expiry/write-offs/{id}/post`
 
-### 14.3 Bundle APIs
+### 15.3 Pack APIs
+
+- `GET /api/retail/packs`
+- `POST /api/retail/packs`
+- `GET /api/retail/packs/{id}`
+- `PUT /api/retail/packs/{id}`
+- `POST /api/retail/packs/{id}/activate`
+- `POST /api/retail/packs/{id}/deactivate`
+- `GET /api/retail/packs/barcode/{barcode}`
+- `POST /api/inventory/pack-conversions`
+
+### 15.4 Bundle APIs
 
 - `GET /api/retail/bundles`
 - `POST /api/retail/bundles`
@@ -786,7 +998,7 @@ Audit records should include:
 - `POST /api/retail/bundles/{id}/deactivate`
 - `GET /api/retail/bundles/{id}/availability`
 
-### 14.4 Promotion APIs
+### 15.5 Promotion APIs
 
 - `GET /api/retail/promotions`
 - `POST /api/retail/promotions`
@@ -798,9 +1010,9 @@ Audit records should include:
 - `POST /api/retail/promotions/{id}/cancel`
 - `POST /api/retail/promotions/evaluate`
 
-## 15. Suggested Database Entities
+## 16. Suggested Database Entities
 
-### 15.1 Replenishment
+### 16.1 Replenishment
 
 - `ReplenishmentRun`
 - `ReplenishmentRunLine`
@@ -808,7 +1020,7 @@ Audit records should include:
 - `SupplierLeadTime`
 - `SalesVelocitySnapshot`
 
-### 15.2 Expiry and FIFO
+### 16.2 Expiry and FIFO
 
 - `StockLayer`
 - `StockReservation`
@@ -818,13 +1030,20 @@ Audit records should include:
 
 The existing stock ledger should continue as the source of movement history. `StockLayer` should represent remaining issueable quantities for FIFO/FEFO allocation.
 
-### 15.3 Bundles
+### 16.3 Packs
+
+- `ItemPack`
+- `ItemPackBarcode`
+- `PackConversion`
+- `PackConversionLine`
+
+### 16.4 Bundles
 
 - `Bundle`
 - `BundleComponent`
 - `BundleSaleExpansion`
 
-### 15.4 Promotions
+### 16.5 Promotions
 
 - `Promotion`
 - `PromotionLine`
@@ -832,13 +1051,14 @@ The existing stock ledger should continue as the source of movement history. `St
 - `PromotionApplication`
 - `PromotionUsageLimit`
 
-## 16. Frontend Navigation
+## 17. Frontend Navigation
 
 Recommended menu structure:
 
 - Retail
   - POS
   - Airtime and Bill Pay
+  - Pack Items
   - Promotions
   - Bundles
 - Inventory
@@ -862,12 +1082,13 @@ Recommended menu structure:
   - Sales Reports
   - Finance Reports
 
-## 17. Implementation Phases
+## 18. Implementation Phases
 
 ### Phase 1: Documentation and Data Foundation
 
 - Finalize this specification.
 - Add item tracking settings for expiry/FIFO behavior.
+- Add item pack and barcode setup.
 - Add stock layer model.
 - Add reorder policy per item and warehouse.
 - Add permissions for replenishment, expiry, bundles, and promotions.
@@ -887,21 +1108,30 @@ Recommended menu structure:
 - Convert selected recommendations into purchase requisitions or purchase orders.
 - Add replenishment reports.
 
-### Phase 4: Bundles
+### Phase 4: Pack Items
+
+- Add pack master data.
+- Add pack barcode lookup.
+- Add purchase and receiving support for supplier packs.
+- Add POS sale support for pack barcode scanning.
+- Add replenishment pack rounding.
+- Add pack sales and conversion reports.
+
+### Phase 5: Bundles
 
 - Add bundle master data.
 - Add bundle availability calculation.
 - Add POS bundle sale expansion.
 - Add bundle profitability report.
 
-### Phase 5: Promotions
+### Phase 6: Promotions
 
 - Add promotion master data and approval flow.
 - Add promotion evaluation engine.
 - Apply promotions at POS.
 - Add promotion reporting and margin controls.
 
-### Phase 6: Hardening
+### Phase 7: Hardening
 
 - Add integration tests for posting flows.
 - Add audit reports.
@@ -909,37 +1139,40 @@ Recommended menu structure:
 - Add role-based UAT checklists.
 - Add backup and restore procedure validation.
 
-## 18. Testing Strategy
+## 19. Testing Strategy
 
-### 18.1 Unit Tests
+### 19.1 Unit Tests
 
 - Reorder quantity calculation
 - FIFO layer selection
 - FEFO layer selection
 - Expiry validation
+- Pack barcode conversion
 - Bundle availability
 - Promotion eligibility and stacking
 
-### 18.2 Integration Tests
+### 19.2 Integration Tests
 
 - Goods receipt creates stock layers.
 - POS sale consumes correct FIFO/FEFO layers.
+- Pack barcode sale consumes converted base quantity.
 - Expired stock cannot be sold.
 - Replenishment run creates purchase requisition.
 - Bundle sale consumes components.
 - Promotion applies and stores trace.
 
-### 18.3 Manual UAT Scenarios
+### 19.3 Manual UAT Scenarios
 
 - Receive milk with expiry date and sell using FEFO.
 - Try selling expired yogurt and confirm sale is blocked.
+- Create single, six-pack, and carton barcodes for soft drinks and sell each pack size.
 - Create replenishment recommendation for low-stock rice.
 - Convert recommendation into purchase order.
 - Create breakfast bundle and sell it at POS.
 - Create buy 2 get 1 free promotion and verify POS discount.
 - Expire promotion and confirm it no longer applies.
 
-## 19. Reporting Requirements
+## 20. Reporting Requirements
 
 Operational reports:
 
@@ -952,6 +1185,8 @@ Operational reports:
 - Near Expiry
 - Expired Stock
 - Expiry Write-Off
+- Pack Sales
+- Pack Conversion
 - Bundle Sales
 - Bundle Profitability
 - Active Promotions
@@ -969,33 +1204,37 @@ Management reports:
 - Promotion Return on Investment
 - Stock Loss and Write-Off Summary
 
-## 20. Key Design Decisions
+## 21. Key Design Decisions
 
 - Use a separate supermarket product copy instead of one large service-plus-supermarket ERP toggle.
 - Keep service repair screens and APIs out of the supermarket user surface.
 - Use the new `neuedge_inv` PostgreSQL database for NeuEdge Inv.
 - Use FIFO for general non-expiry stock and FEFO for expiry-sensitive stock.
+- Store pack inventory in base units while allowing independent pack barcodes and prices.
 - Implement dynamic bundles first because they avoid separate assembly stock complexity.
 - Require approval for promotions and expiry write-offs.
 - Keep stock ledger immutable and use reversal/adjustment for corrections.
 
-## 21. Open Decisions
+## 22. Open Decisions
 
 These decisions should be confirmed before implementation:
 
 - Should POS allow negative stock for trusted users, or always block it?
 - Should near-expiry stock be discounted automatically or only reported?
+- Should break-pack be a mandatory operational document or only an optional audit document?
+- Should every pack have independent pricing, or should some packs inherit price from base unit conversion?
 - Should bundle returns allow component-level returns?
 - Should promotions be branch-specific from day one?
 - Should supplier-funded promotions create receivable claims automatically?
 - Should utility payment provider integration be external API based or manual transaction capture only in the first version?
 
-## 22. Success Criteria
+## 23. Success Criteria
 
 The supermarket ERP is ready for operational rollout when:
 
 - Users can manage product master data with expiry and reorder settings.
 - Goods receipt captures batch/expiry data for required items.
+- Users can buy, receive, scan, sell, and report pack items correctly.
 - POS consumes stock using FIFO/FEFO and blocks expired goods.
 - Replenishment recommendations are reliable and convertible into purchase documents.
 - Bundles can be sold and component stock is deducted correctly.
