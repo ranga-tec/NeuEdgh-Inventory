@@ -6,6 +6,7 @@ using ISS.Domain.Finance;
 using ISS.Domain.Common;
 using ISS.Domain.Inventory;
 using ISS.Domain.Procurement;
+using ISS.Domain.Retail;
 using ISS.Domain.Sales;
 using ISS.Domain.Service;
 using Microsoft.AspNetCore.Authorization;
@@ -319,88 +320,62 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
         var canInventoryArea = HasAnyRole(Roles.Admin, Roles.Inventory, Roles.Reporting);
         var canSalesQuotesOrdersArea = HasAnyRole(Roles.Admin, Roles.Sales, Roles.Finance);
         var canSalesDispatchArea = HasAnyRole(Roles.Admin, Roles.Sales, Roles.Inventory, Roles.Finance);
-        var canDirectDispatchArea = HasAnyRole(Roles.Admin, Roles.Sales, Roles.Inventory, Roles.Service);
+        var canDirectDispatchArea = HasAnyRole(Roles.Admin, Roles.Sales, Roles.Inventory);
         var canSalesInvoicesArea = HasAnyRole(Roles.Admin, Roles.Sales, Roles.Inventory, Roles.Finance);
-        var canServiceCoreArea = HasAnyRole(Roles.Admin, Roles.Service, Roles.Sales);
-        var canServiceEstimatesArea = HasAnyRole(Roles.Admin, Roles.Service, Roles.Sales, Roles.Finance);
-        var canExpenseClaimsArea = HasAnyRole(Roles.Admin, Roles.Service, Roles.Finance);
-        var canMaterialRequisitionsArea = HasAnyRole(Roles.Admin, Roles.Service, Roles.Inventory);
         var canFinanceArea = HasAnyRole(Roles.Admin, Roles.Finance);
+        var canRetailArea = HasAnyRole(Roles.Admin, Roles.Sales, Roles.Inventory, Roles.Finance, Roles.Reporting);
 
-        var canViewServiceSummary = canServiceCoreArea || canServiceEstimatesArea || canExpenseClaimsArea || canMaterialRequisitionsArea || canAnalytics;
         var canViewFinanceSummary = canFinanceArea || canAnalytics;
         var canViewInventorySummary = canInventoryArea || canAnalytics;
         var canViewProcurementSummary = canProcurementArea;
         var canViewSalesSummary = canSalesQuotesOrdersArea || canSalesDispatchArea || canDirectDispatchArea || canSalesInvoicesArea;
+        var canViewRetailSummary = canRetailArea || canAnalytics;
 
-        var serviceSummaryHref = canServiceCoreArea ? "/service/jobs" : canAnalytics ? "/reporting/service-kpis" : null;
-        var serviceEstimateHref = canServiceEstimatesArea ? "/service/estimates" : canAnalytics ? "/reporting/service-kpis" : null;
-        var expenseClaimHref = canExpenseClaimsArea ? "/service/expense-claims" : canAnalytics ? "/reporting/service-kpis" : null;
-        var materialRequisitionHref = canMaterialRequisitionsArea ? "/service/material-requisitions" : canAnalytics ? "/reporting/service-kpis" : null;
         var financeArHref = canFinanceArea ? "/finance/ar" : canAnalytics ? "/reporting/aging" : null;
         var financeApHref = canFinanceArea ? "/finance/ap" : canAnalytics ? "/reporting/aging" : null;
-        var reorderHref = canInventoryArea ? "/inventory/reorder-alerts" : canAnalytics ? "/reporting/stock-ledger" : null;
+        var reorderHref = canInventoryArea ? "/inventory/replenishment" : canAnalytics ? "/reporting/stock-ledger" : null;
+        var expiryHref = canInventoryArea ? "/inventory/expiry" : canAnalytics ? "/reporting/stock-ledger" : null;
         var inventoryAdjustmentHref = canInventoryArea ? "/inventory/stock-adjustments" : canAnalytics ? "/reporting/stock-ledger" : null;
         var inventoryTransferHref = canInventoryArea ? "/inventory/stock-transfers" : canAnalytics ? "/reporting/stock-ledger" : null;
 
-        var openServiceJobs = 0;
-        var inProgressServiceJobs = 0;
-        var completedServiceJobs = 0;
-        var openJobsOlderThan7Days = 0;
-        var draftServiceEstimates = 0;
-        var pendingEstimateCustomerApprovals = 0;
-        var workOrdersInProgress = 0;
-        var draftMaterialRequisitions = 0;
-        var submittedExpenseClaims = 0;
-        var approvedExpenseClaims = 0;
-
-        if (canViewServiceSummary)
-        {
-            var serviceJobs = await dbContext.ServiceJobs.AsNoTracking()
-                .Select(x => new { x.Status, x.OpenedAt })
-                .ToListAsync(cancellationToken);
-
-            openServiceJobs = serviceJobs.Count(x => x.Status is ServiceJobStatus.Draft or ServiceJobStatus.Open or ServiceJobStatus.Assigned or ServiceJobStatus.InProgress or ServiceJobStatus.Reopened);
-            inProgressServiceJobs = serviceJobs.Count(x => x.Status == ServiceJobStatus.InProgress);
-            completedServiceJobs = serviceJobs.Count(x => x.Status == ServiceJobStatus.WorkCompleted);
-            openJobsOlderThan7Days = serviceJobs.Count(x =>
-                x.Status is ServiceJobStatus.Draft or ServiceJobStatus.Open or ServiceJobStatus.Assigned or ServiceJobStatus.InProgress or ServiceJobStatus.Reopened &&
-                (generatedAt - x.OpenedAt).TotalDays > 7d);
-
-            var workOrderStatusCounts = await dbContext.WorkOrders.AsNoTracking()
-                .GroupBy(x => x.Status)
-                .Select(g => new { g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
-            workOrdersInProgress = GetCount(workOrderStatusCounts, WorkOrderStatus.InProgress);
-
-            var estimateSnapshots = await dbContext.ServiceEstimates.AsNoTracking()
-                .Select(x => new { x.Status, x.CustomerApprovalStatus })
-                .ToListAsync(cancellationToken);
-            draftServiceEstimates = estimateSnapshots.Count(x => x.Status == ServiceEstimateStatus.Draft);
-            pendingEstimateCustomerApprovals = estimateSnapshots.Count(x =>
-                x.Status == ServiceEstimateStatus.Draft &&
-                x.CustomerApprovalStatus == ServiceEstimateCustomerApprovalStatus.Pending);
-
-            var expenseClaimStatusCounts = await dbContext.ServiceExpenseClaims.AsNoTracking()
-                .GroupBy(x => x.Status)
-                .Select(g => new { g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
-            submittedExpenseClaims = GetCount(expenseClaimStatusCounts, ServiceExpenseClaimStatus.Submitted);
-            approvedExpenseClaims = GetCount(expenseClaimStatusCounts, ServiceExpenseClaimStatus.Approved);
-
-            var materialReqStatusCounts = await dbContext.MaterialRequisitions.AsNoTracking()
-                .GroupBy(x => x.Status)
-                .Select(g => new { g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
-            draftMaterialRequisitions = GetCount(materialReqStatusCounts, MaterialRequisitionStatus.Draft);
-        }
+        var todayStart = new DateTimeOffset(generatedAt.UtcDateTime.Date, TimeSpan.Zero);
+        var tomorrowStart = todayStart.AddDays(1);
+        var today = DateOnly.FromDateTime(generatedAt.UtcDateTime);
+        var nearExpiryCutoff = today.AddDays(30);
 
         var reorderAlerts = 0;
         var draftStockAdjustments = 0;
         var draftStockTransfers = 0;
+        var stockValue = 0m;
+        var availableStockLayers = 0;
+        var expiryTrackedLayers = 0;
+        var nearExpiryLayers = 0;
+        var nearExpiryValue = 0m;
+        var expiredLayers = 0;
+        var expiredValue = 0m;
+        var draftExpiryWriteOffs = 0;
+        var approvedExpiryWriteOffs = 0;
+        var draftReplenishmentRuns = 0;
+        var replenishmentRequiredLines = 0;
         if (canViewInventorySummary)
         {
             reorderAlerts = await CountReorderAlertsAsync(cancellationToken);
+
+            var stockLayerSnapshot = await dbContext.StockLayers.AsNoTracking()
+                .Where(x => x.Status == StockLayerStatus.Available && x.RemainingQuantity > 0m)
+                .Select(x => new { x.RemainingQuantity, x.UnitCost, x.ExpiryDate })
+                .ToListAsync(cancellationToken);
+            stockValue = stockLayerSnapshot.Sum(x => x.RemainingQuantity * x.UnitCost);
+            availableStockLayers = stockLayerSnapshot.Count;
+            expiryTrackedLayers = stockLayerSnapshot.Count(x => x.ExpiryDate is not null);
+            nearExpiryLayers = stockLayerSnapshot.Count(x => x.ExpiryDate >= today && x.ExpiryDate <= nearExpiryCutoff);
+            nearExpiryValue = stockLayerSnapshot
+                .Where(x => x.ExpiryDate >= today && x.ExpiryDate <= nearExpiryCutoff)
+                .Sum(x => x.RemainingQuantity * x.UnitCost);
+            expiredLayers = stockLayerSnapshot.Count(x => x.ExpiryDate < today);
+            expiredValue = stockLayerSnapshot
+                .Where(x => x.ExpiryDate < today)
+                .Sum(x => x.RemainingQuantity * x.UnitCost);
 
             var stockAdjustmentStatusCounts = await dbContext.StockAdjustments.AsNoTracking()
                 .GroupBy(x => x.Status)
@@ -413,12 +388,27 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
                 .Select(g => new { g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
             draftStockTransfers = GetCount(stockTransferStatusCounts, StockTransferStatus.Draft);
+
+            var expiryWriteOffStatusCounts = await dbContext.ExpiryWriteOffs.AsNoTracking()
+                .GroupBy(x => x.Status)
+                .Select(g => new { g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
+            draftExpiryWriteOffs = GetCount(expiryWriteOffStatusCounts, ExpiryWriteOffStatus.Draft);
+            approvedExpiryWriteOffs = GetCount(expiryWriteOffStatusCounts, ExpiryWriteOffStatus.Approved);
+
+            draftReplenishmentRuns = await dbContext.ReplenishmentRuns.AsNoTracking()
+                .CountAsync(x => x.Status == ReplenishmentRunStatus.Draft, cancellationToken);
+            replenishmentRequiredLines = await dbContext.ReplenishmentRuns.AsNoTracking()
+                .Where(x => x.Status == ReplenishmentRunStatus.Draft)
+                .SelectMany(x => x.Lines)
+                .CountAsync(x => x.Status == ReplenishmentLineStatus.ReorderRequired || x.Status == ReplenishmentLineStatus.CriticalStock, cancellationToken);
         }
 
         var draftPurchaseRequisitions = 0;
         var submittedPurchaseRequisitions = 0;
         var sentRfqs = 0;
         var activePurchaseOrders = 0;
+        var openPurchaseOrderValue = 0m;
         var draftDirectPurchases = 0;
         var draftSupplierInvoices = 0;
         if (canViewProcurementSummary)
@@ -443,6 +433,10 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
             activePurchaseOrders =
                 GetCount(purchaseOrderStatusCounts, PurchaseOrderStatus.Approved) +
                 GetCount(purchaseOrderStatusCounts, PurchaseOrderStatus.PartiallyReceived);
+            openPurchaseOrderValue = await dbContext.PurchaseOrders.AsNoTracking()
+                .Where(x => x.Status == PurchaseOrderStatus.Approved || x.Status == PurchaseOrderStatus.PartiallyReceived)
+                .SelectMany(x => x.Lines)
+                .SumAsync(x => (x.OrderedQuantity - x.ReceivedQuantity) * x.UnitPrice, cancellationToken);
 
             var directPurchaseStatusCounts = await dbContext.DirectPurchases.AsNoTracking()
                 .GroupBy(x => x.Status)
@@ -464,6 +458,8 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
         var draftDispatches = 0;
         var draftDirectDispatches = 0;
         var draftSalesInvoices = 0;
+        var postedSalesTodayCount = 0;
+        var postedSalesTodayAmount = 0m;
         if (canViewSalesSummary)
         {
             var salesQuoteStatusCounts = await dbContext.SalesQuotes.AsNoTracking()
@@ -497,6 +493,32 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
                 .Select(g => new { g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
             draftSalesInvoices = GetCount(salesInvoiceStatusCounts, SalesInvoiceStatus.Draft);
+
+            var salesToday = await dbContext.SalesInvoices.AsNoTracking()
+                .Where(x =>
+                    (x.Status == SalesInvoiceStatus.Posted || x.Status == SalesInvoiceStatus.Paid) &&
+                    x.InvoiceDate >= todayStart &&
+                    x.InvoiceDate < tomorrowStart)
+                .Select(x => new
+                {
+                    Lines = x.Lines.Select(line => new
+                    {
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.DiscountPercent,
+                        line.TaxPercent
+                    })
+                })
+                .ToListAsync(cancellationToken);
+            postedSalesTodayCount = salesToday.Count;
+            postedSalesTodayAmount = salesToday
+                .SelectMany(x => x.Lines)
+                .Sum(x =>
+                {
+                    var gross = x.Quantity * x.UnitPrice;
+                    var subtotal = gross - (gross * (x.DiscountPercent / 100m));
+                    return subtotal + (subtotal * (x.TaxPercent / 100m));
+                });
         }
 
         var arOutstanding = 0m;
@@ -524,23 +546,67 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
             apOverdueEntries = apEntries.Count(x => (generatedAt.Date - x.PostedAt.Date).TotalDays > 30d);
         }
 
-        var heroMetrics = new List<DashboardMetricDto>();
-        if (canViewServiceSummary)
+        var activePacks = 0;
+        var activeSalesPacks = 0;
+        var activeBundles = 0;
+        var activePromotions = 0;
+        var pendingPromotions = 0;
+        var postedUtilityPaymentsToday = 0;
+        var utilityPaymentAmountToday = 0m;
+        var draftUtilityPayments = 0;
+        if (canViewRetailSummary)
         {
-            heroMetrics.Add(CreateCountMetric(
-                "Open service jobs",
-                openServiceJobs,
-                "Jobs that still need operational follow-up.",
-                serviceSummaryHref));
+            activePacks = await dbContext.ItemPacks.AsNoTracking()
+                .CountAsync(x => x.IsActive, cancellationToken);
+            activeSalesPacks = await dbContext.ItemPacks.AsNoTracking()
+                .CountAsync(x => x.IsActive && x.SaleAllowed, cancellationToken);
+            activeBundles = await dbContext.Bundles.AsNoTracking()
+                .CountAsync(x => x.IsActive, cancellationToken);
+            activePromotions = await dbContext.Promotions.AsNoTracking()
+                .CountAsync(x => x.Status == PromotionStatus.Active, cancellationToken);
+            pendingPromotions = await dbContext.Promotions.AsNoTracking()
+                .CountAsync(x => x.Status == PromotionStatus.Draft || x.Status == PromotionStatus.PendingApproval || x.Status == PromotionStatus.Approved, cancellationToken);
+
+            var utilityPaymentsToday = await dbContext.UtilityPayments.AsNoTracking()
+                .Where(x =>
+                    x.Status == UtilityPaymentStatus.Posted &&
+                    x.PostedAt >= todayStart &&
+                    x.PostedAt < tomorrowStart)
+                .Select(x => new { x.Amount, x.ServiceFee })
+                .ToListAsync(cancellationToken);
+            postedUtilityPaymentsToday = utilityPaymentsToday.Count;
+            utilityPaymentAmountToday = utilityPaymentsToday.Sum(x => x.Amount + x.ServiceFee);
+            draftUtilityPayments = await dbContext.UtilityPayments.AsNoTracking()
+                .CountAsync(x => x.Status == UtilityPaymentStatus.Draft, cancellationToken);
+        }
+
+        var heroMetrics = new List<DashboardMetricDto>();
+        if (canViewSalesSummary)
+        {
+            heroMetrics.Add(CreateCurrencyMetric(
+                "Sales today",
+                postedSalesTodayAmount,
+                "Posted and paid sales invoices for the current UTC business day.",
+                canSalesInvoicesArea ? "/sales/invoices" : null));
         }
 
         if (canViewInventorySummary)
         {
+            heroMetrics.Add(CreateCurrencyMetric(
+                "Stock value",
+                stockValue,
+                "Available FEFO/FIFO stock layer value currently on hand.",
+                canAnalytics ? "/reporting/costing" : "/inventory/onhand"));
             heroMetrics.Add(CreateCountMetric(
                 "Reorder alerts",
                 reorderAlerts,
                 "Items already at or below their reorder point.",
                 reorderHref));
+            heroMetrics.Add(CreateCountMetric(
+                "Expired layers",
+                expiredLayers,
+                "Available expiry-tracked layers already past expiry.",
+                expiryHref));
         }
 
         if (canViewFinanceSummary)
@@ -559,29 +625,20 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
 
         if (canViewProcurementSummary)
         {
-            heroMetrics.Add(CreateCountMetric(
-                "POs awaiting receipt",
-                activePurchaseOrders,
-                "Approved or partially received purchase orders in flight.",
+            heroMetrics.Add(CreateCurrencyMetric(
+                "Open PO value",
+                openPurchaseOrderValue,
+                "Remaining approved or partially received purchase value.",
                 "/procurement/purchase-orders"));
         }
 
-        if (canSalesQuotesOrdersArea)
+        if (canViewRetailSummary)
         {
             heroMetrics.Add(CreateCountMetric(
-                "Confirmed sales orders",
-                confirmedSalesOrders,
-                "Customer orders ready for dispatch or completion.",
-                "/sales/orders"));
-        }
-
-        if (canServiceEstimatesArea || canAnalytics)
-        {
-            heroMetrics.Add(CreateCountMetric(
-                "Estimates pending customer",
-                pendingEstimateCustomerApprovals,
-                "Issued estimates still waiting on customer response.",
-                serviceEstimateHref));
+                "Active promotions",
+                activePromotions,
+                "Promotions currently active for supermarket selling.",
+                "/retail/promotions"));
         }
 
         var alerts = new List<DashboardAlertDto>();
@@ -595,14 +652,44 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
                 reorderHref));
         }
 
-        if (canViewServiceSummary && openJobsOlderThan7Days > 0)
+        if (canViewInventorySummary && expiredLayers > 0)
         {
             alerts.Add(CreateAlert(
-                "Aged service workload",
-                $"{openJobsOlderThan7Days} open or in-progress jobs are older than seven days.",
-                openJobsOlderThan7Days >= 10 ? "high" : "medium",
-                openJobsOlderThan7Days,
-                serviceSummaryHref));
+                "Expired stock needs action",
+                $"{expiredLayers} available stock layers are expired and should be blocked or written off.",
+                expiredLayers >= 10 ? "high" : "medium",
+                expiredLayers,
+                expiryHref));
+        }
+
+        if (canViewInventorySummary && nearExpiryLayers > 0)
+        {
+            alerts.Add(CreateAlert(
+                "Near-expiry FEFO priority",
+                $"{nearExpiryLayers} stock layers expire within 30 days and should be sold or transferred first.",
+                nearExpiryLayers >= 20 ? "high" : "medium",
+                nearExpiryLayers,
+                expiryHref));
+        }
+
+        if (canViewInventorySummary && replenishmentRequiredLines > 0)
+        {
+            alerts.Add(CreateAlert(
+                "Replenishment run waiting",
+                $"{replenishmentRequiredLines} draft replenishment lines need buyer review or PR conversion.",
+                replenishmentRequiredLines >= 20 ? "high" : "medium",
+                replenishmentRequiredLines,
+                "/inventory/replenishment"));
+        }
+
+        if (canViewRetailSummary && pendingPromotions > 0)
+        {
+            alerts.Add(CreateAlert(
+                "Promotions pending activation",
+                $"{pendingPromotions} promotions are draft, pending approval, or approved but not active.",
+                pendingPromotions >= 10 ? "medium" : "low",
+                pendingPromotions,
+                "/retail/promotions"));
         }
 
         if (canViewFinanceSummary && arOverdueEntries > 0)
@@ -637,6 +724,7 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
                     CreateCountMetric("Submitted requisitions", submittedPurchaseRequisitions, "Requests waiting for approval or sourcing action.", "/procurement/purchase-requisitions"),
                     CreateCountMetric("Sent RFQs", sentRfqs, "Supplier quote requests still awaiting closure.", "/procurement/rfqs"),
                     CreateCountMetric("POs awaiting receipt", activePurchaseOrders, "Approved or partially received orders that still need goods receipt.", "/procurement/purchase-orders"),
+                    CreateCurrencyMetric("Open PO value", openPurchaseOrderValue, "Remaining purchase order value not yet received.", "/procurement/purchase-orders"),
                     CreateCountMetric("Draft direct purchases", draftDirectPurchases, "Spot-buy documents not yet posted into stock.", "/procurement/direct-purchases"),
                     CreateCountMetric("Draft supplier invoices", draftSupplierInvoices, "Supplier bills not yet posted to accounts payable.", "/procurement/supplier-invoices")
                 ]));
@@ -663,6 +751,8 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
 
         if (canSalesInvoicesArea)
         {
+            salesMetrics.Add(CreateCurrencyMetric("Sales today", postedSalesTodayAmount, "Posted and paid invoice value for today's trading.", "/sales/invoices"));
+            salesMetrics.Add(CreateCountMetric("Posted invoices today", postedSalesTodayCount, "Invoices posted or paid today.", "/sales/invoices"));
             salesMetrics.Add(CreateCountMetric("Draft sales invoices", draftSalesInvoices, "Invoices prepared but not yet posted to receivables.", "/sales/invoices"));
         }
 
@@ -675,51 +765,45 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
                 salesMetrics));
         }
 
-        var serviceMetrics = new List<DashboardMetricDto>();
-        if (canViewServiceSummary)
-        {
-            serviceMetrics.Add(CreateCountMetric("Open jobs", openServiceJobs, "Active service jobs still in the workshop queue.", serviceSummaryHref));
-            serviceMetrics.Add(CreateCountMetric("Jobs in progress", inProgressServiceJobs, "Jobs currently being worked on.", serviceSummaryHref));
-            serviceMetrics.Add(CreateCountMetric("Completed awaiting closure", completedServiceJobs, "Jobs finished operationally but not yet administratively closed.", serviceSummaryHref));
-            serviceMetrics.Add(CreateCountMetric("Work orders in progress", workOrdersInProgress, "Technician work orders actively underway.", canServiceCoreArea ? "/service/work-orders" : serviceSummaryHref));
-        }
-
-        if (canServiceEstimatesArea || canAnalytics)
-        {
-            serviceMetrics.Add(CreateCountMetric("Draft estimates", draftServiceEstimates, "Estimates still being prepared before customer release.", serviceEstimateHref));
-            serviceMetrics.Add(CreateCountMetric("Pending customer approvals", pendingEstimateCustomerApprovals, "Estimates sent to customers and awaiting decision.", serviceEstimateHref));
-        }
-
-        if (canMaterialRequisitionsArea || canAnalytics)
-        {
-            serviceMetrics.Add(CreateCountMetric("Draft material requisitions", draftMaterialRequisitions, "Parts requests not yet posted for issue.", materialRequisitionHref));
-        }
-
-        if (canExpenseClaimsArea || canAnalytics)
-        {
-            serviceMetrics.Add(CreateCountMetric("Submitted expense claims", submittedExpenseClaims, "Claims awaiting review or approval.", expenseClaimHref));
-            serviceMetrics.Add(CreateCountMetric("Approved unsettled claims", approvedExpenseClaims, "Approved claims still waiting for settlement.", expenseClaimHref));
-        }
-
-        if (serviceMetrics.Count > 0)
-        {
-            sections.Add(new DashboardSectionDto(
-                "service",
-                "Service Operations",
-                "Surface workshop bottlenecks, customer approvals, and service-side finance queues.",
-                serviceMetrics));
-        }
-
         if (canViewInventorySummary)
         {
             sections.Add(new DashboardSectionDto(
                 "inventory",
-                "Inventory Control",
-                "Watch replenishment pressure and draft warehouse transactions before they stall operations.",
+                "Inventory Health",
+                "Watch stock value, FEFO/FIFO layer pressure, replenishment, and draft warehouse transactions.",
                 [
+                    CreateCurrencyMetric("Stock value", stockValue, "Available layer value currently on hand.", canAnalytics ? "/reporting/costing" : "/inventory/onhand"),
+                    CreateCountMetric("Available stock layers", availableStockLayers, "Open FIFO/FEFO stock layers available for sale or dispatch.", "/inventory/expiry"),
+                    CreateCountMetric("Expiry-tracked layers", expiryTrackedLayers, "Layers with expiry dates and FEFO handling.", "/inventory/expiry"),
+                    CreateCountMetric("Near expiry layers", nearExpiryLayers, "Layers expiring within the next 30 days.", expiryHref),
+                    CreateCurrencyMetric("Near expiry value", nearExpiryValue, "Inventory value exposed to near-expiry risk.", expiryHref),
+                    CreateCountMetric("Expired layers", expiredLayers, "Available layers already past expiry.", expiryHref),
+                    CreateCurrencyMetric("Expired value", expiredValue, "Inventory value that should be blocked or written off.", expiryHref),
                     CreateCountMetric("Reorder alerts", reorderAlerts, "Items already below their reorder point.", reorderHref),
+                    CreateCountMetric("Draft replenishment runs", draftReplenishmentRuns, "Calculated replenishment runs waiting for conversion.", "/inventory/replenishment"),
+                    CreateCountMetric("Replenishment lines", replenishmentRequiredLines, "Items marked reorder required or critical in draft replenishment runs.", "/inventory/replenishment"),
                     CreateCountMetric("Draft stock adjustments", draftStockAdjustments, "Adjustment documents waiting to be posted.", inventoryAdjustmentHref),
-                    CreateCountMetric("Draft stock transfers", draftStockTransfers, "Transfer documents waiting for warehouse movement.", inventoryTransferHref)
+                    CreateCountMetric("Draft stock transfers", draftStockTransfers, "Transfer documents waiting for warehouse movement.", inventoryTransferHref),
+                    CreateCountMetric("Draft expiry write-offs", draftExpiryWriteOffs, "Expiry write-off documents still in draft.", expiryHref),
+                    CreateCountMetric("Approved expiry write-offs", approvedExpiryWriteOffs, "Expiry write-offs approved but not posted.", expiryHref)
+                ]));
+        }
+
+        if (canViewRetailSummary)
+        {
+            sections.Add(new DashboardSectionDto(
+                "retail",
+                "Retail Configuration",
+                "Control supermarket selling structures: POS, packs, bundles, promotions, airtime, and bill payments.",
+                [
+                    CreateCountMetric("Active item packs", activePacks, "Active case, pack, unit, and multi-pack definitions.", "/retail/packs"),
+                    CreateCountMetric("Sale packs", activeSalesPacks, "Packs allowed for selling at POS.", "/retail/packs"),
+                    CreateCountMetric("Active bundles", activeBundles, "Bundles available for supermarket offers.", "/retail/bundles"),
+                    CreateCountMetric("Active promotions", activePromotions, "Promotions currently active.", "/retail/promotions"),
+                    CreateCountMetric("Pending promotions", pendingPromotions, "Promotions awaiting approval, activation, or completion.", "/retail/promotions"),
+                    CreateCountMetric("Utility payments today", postedUtilityPaymentsToday, "Posted airtime and bill-payment transactions today.", "/retail/utilities"),
+                    CreateCurrencyMetric("Utility payment value", utilityPaymentAmountToday, "Airtime and bill-payment value posted today.", "/retail/utilities"),
+                    CreateCountMetric("Draft utility payments", draftUtilityPayments, "Counter utility payments not yet posted.", "/retail/utilities")
                 ]));
         }
 
@@ -746,26 +830,27 @@ public sealed class ReportingController(IIssDbContext dbContext, InventoryServic
         AddQuickAction(quickActions, canSalesQuotesOrdersArea, "Sales quotes", "Manage live quotations and accepted opportunities.", "/sales/quotes");
         AddQuickAction(quickActions, canSalesQuotesOrdersArea, "Sales orders", "Follow confirmed customer orders into fulfilment.", "/sales/orders");
         AddQuickAction(quickActions, canSalesDispatchArea, "Dispatches", "Review warehouse dispatch documents before posting.", "/sales/dispatches");
-        AddQuickAction(quickActions, canDirectDispatchArea, "Direct dispatches", "Handle immediate stock issues tied to sales or service.", "/sales/direct-dispatches");
+        AddQuickAction(quickActions, canDirectDispatchArea, "Direct dispatches", "Handle immediate FIFO/FEFO stock issues from the counter.", "/sales/direct-dispatches");
         AddQuickAction(quickActions, canSalesInvoicesArea, "Sales invoices", "Post customer invoices and hand off to finance.", "/sales/invoices");
+        AddQuickAction(quickActions, canSalesInvoicesArea, "Counter sales", "Open the supermarket POS workspace.", "/retail/pos");
+        AddQuickAction(quickActions, canInventoryArea, "Replenishment", "Review reorder runs and convert buying demand.", "/inventory/replenishment");
+        AddQuickAction(quickActions, canInventoryArea, "Expiry handling", "Review near-expiry and expired FEFO layers.", "/inventory/expiry");
         AddQuickAction(quickActions, canInventoryArea, "Reorder alerts", "Review stock that needs replenishment.", "/inventory/reorder-alerts");
         AddQuickAction(quickActions, canInventoryArea, "Stock transfers", "Balance stock between warehouses.", "/inventory/stock-transfers");
         AddQuickAction(quickActions, canInventoryArea, "On hand", "Inspect item balances by warehouse.", "/inventory/onhand");
-        AddQuickAction(quickActions, canServiceCoreArea, "Service jobs", "Run the workshop queue and customer jobs.", "/service/jobs");
-        AddQuickAction(quickActions, canServiceCoreArea, "Work orders", "Manage technician execution and progress.", "/service/work-orders");
-        AddQuickAction(quickActions, canServiceEstimatesArea, "Service estimates", "Keep customer approvals moving.", "/service/estimates");
-        AddQuickAction(quickActions, canMaterialRequisitionsArea, "Material requisitions", "Issue parts from stock to service work.", "/service/material-requisitions");
-        AddQuickAction(quickActions, canExpenseClaimsArea, "Expense claims", "Approve and settle field or workshop expenses.", "/service/expense-claims");
+        AddQuickAction(quickActions, canRetailArea, "Pack items", "Maintain units, cases, cartons, and sales packs.", "/retail/packs");
+        AddQuickAction(quickActions, canRetailArea, "Bundles", "Maintain bundle items and combo offers.", "/retail/bundles");
+        AddQuickAction(quickActions, canRetailArea, "Promotions", "Create and activate supermarket promotions.", "/retail/promotions");
+        AddQuickAction(quickActions, canRetailArea, "Airtime & bill pay", "Record counter airtime and bill payments.", "/retail/utilities");
         AddQuickAction(quickActions, canFinanceArea, "Accounts receivable", "Chase collections and review customer balances.", "/finance/ar");
         AddQuickAction(quickActions, canFinanceArea, "Accounts payable", "Manage supplier liabilities and payment timing.", "/finance/ap");
         AddQuickAction(quickActions, canFinanceArea, "Payments", "Post settlements against open balances.", "/finance/payments");
         AddQuickAction(quickActions, canAnalytics, "Stock ledger", "Review movement history and running balances.", "/reporting/stock-ledger");
         AddQuickAction(quickActions, canAnalytics, "AR/AP aging", "Analyze overdue balances by aging bucket.", "/reporting/aging");
-        AddQuickAction(quickActions, canAnalytics, "Service KPIs", "Track throughput and completion performance.", "/reporting/service-kpis");
         AddQuickAction(quickActions, canAnalytics, "Costing", "Audit weighted average cost and inventory value.", "/reporting/costing");
 
         return Ok(new DashboardDto(
-            canViewServiceSummary ? openServiceJobs : 0,
+            0,
             canViewFinanceSummary ? arOutstanding : 0m,
             canViewFinanceSummary ? apOutstanding : 0m,
             canViewInventorySummary ? reorderAlerts : 0,

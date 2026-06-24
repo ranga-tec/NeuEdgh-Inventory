@@ -67,9 +67,9 @@ const FALLBACK_ACTIONS: DashboardQuickActionDto[] = [
     href: "/retail/utilities",
   },
   {
-    label: "Reorder alerts",
-    description: "Review stock that needs replenishment.",
-    href: "/inventory/reorder-alerts",
+    label: "Replenishment",
+    description: "Review reorder runs and buying demand.",
+    href: "/inventory/replenishment",
   },
   {
     label: "Accounts receivable",
@@ -239,11 +239,11 @@ export default async function DashboardPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.9fr)]">
         <Card className="overflow-hidden border-transparent bg-[linear-gradient(135deg,color-mix(in_srgb,var(--accent)_14%,transparent),transparent_55%),radial-gradient(circle_at_top_right,color-mix(in_srgb,var(--accent)_18%,transparent),transparent_40%),var(--card-bg)]">
           <div className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-            Operational control tower
+            Supermarket operations
           </div>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--foreground)]">Dashboard</h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--foreground)]">NeuEdge Inv Dashboard</h1>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted-foreground)]">
-            Role-aware queues, exception signals, and direct navigation into the work that needs attention next.
+            Sales, stock value, replenishment, FEFO expiry risk, packs, bundles, promotions, utilities, and finance exceptions in one operating view.
           </p>
           <div className="mt-6 flex flex-wrap gap-2">
             {quickActions.slice(0, 4).map((action) => (
@@ -270,7 +270,7 @@ export default async function DashboardPage() {
               </div>
             </div>
             <div>
-              <div className="text-[var(--muted-foreground)]">Visible work queues</div>
+              <div className="text-[var(--muted-foreground)]">Tracked workstreams</div>
               <div className="mt-1 font-medium text-[var(--foreground)]">{sections.length}</div>
             </div>
             <div>
@@ -317,7 +317,7 @@ export default async function DashboardPage() {
         <div>
           <h2 className="text-lg font-semibold text-[var(--foreground)]">Attention</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Exception-first signals that deserve review before they turn into stockouts, pricing issues, or cashflow drag.
+            Exception-first signals that deserve review before they turn into stockouts, wastage, pricing issues, or cashflow drag.
           </p>
         </div>
 

@@ -201,13 +201,13 @@ export function DashboardAnalyticsPanel({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-            Interactive analytics
+            Operational analytics
           </div>
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--foreground)]">
             Dashboard analytics
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted-foreground)]">
-            Switch between work queues, finance exposure, and exception load to explore the live dashboard numbers.
+            Switch between supermarket work queues, finance exposure, and exception load to explore the live dashboard numbers.
           </p>
         </div>
 
@@ -380,7 +380,7 @@ export function DashboardAnalyticsPanel({
                   </div>
                   <p className="mt-3 text-sm leading-6 text-[var(--muted-foreground)]">
                     The longest bars show where cash, liability, or balance-sheet attention is currently concentrated. Use
-                    the row links to jump straight into the finance queue behind each figure.
+                    the row links to jump straight into the queue behind each figure.
                   </p>
                 </div>
               </div>
