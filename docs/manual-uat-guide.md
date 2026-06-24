@@ -1,0 +1,417 @@
+# Manual UAT Guide
+
+This guide is for a fresh end-to-end manual test of the ISS ERP system.
+
+It is based on a verified walkthrough completed on March 30, 2026 against a fresh database.
+
+## Pre-checks
+
+- Start the backend and frontend.
+- Sign in as an `Admin` user.
+- Use a fresh database when possible so the baseline is predictable.
+
+Fresh systems now auto-seed the minimum reference data required for core finance/reporting flows:
+
+- currencies: `USD` (base), `EUR`, `GBP`
+- payment types: `BANK_TRANSFER`, `CARD`, `CASH`, `CHEQUE`
+- tax codes: `VAT0`, `VAT5`, `VAT15`
+- reference forms used by document routing
+
+## Smoke Check
+
+Run these first:
+
+1. Open `Master Data -> Currencies`.
+Expected:
+`USD` exists and is the active base currency.
+
+2. Open `Finance -> Payments`.
+Expected:
+The payment form has active currency options and does not show the "No active currencies" warning.
+
+3. Open `Reporting -> Costing`.
+Expected:
+The page loads successfully even on a fresh system.
+
+4. Open `Finance -> Petty Cash`.
+Expected:
+The petty cash fund list loads successfully.
+
+5. Open `Finance -> Chart of Accounts`.
+Expected:
+The account list and create form load successfully.
+
+6. Open `Audit Logs`.
+Expected:
+The page loads and shows readable field-by-field audit differences instead of only raw JSON blobs.
+
+7. Open `Service -> Jobs`.
+Expected:
+The job list and create form load without service API errors.
+
+8. Open `Service -> Service Contracts`.
+Expected:
+The contract list and create form load without service API errors.
+
+## End-to-End Scenario
+
+Use these sample values.
+
+### 1. Create core master data
+
+Create:
+
+- Warehouse
+  - Code: `MAIN`
+- Supplier
+  - Code: `SUP1`
+- Customer
+  - Code: `CUS1`
+- Item
+  - SKU: `SKU1`
+  - Name: `HydraulicFilter`
+  - Type: `Spare Part`
+  - UoM: `PCS`
+  - Default Unit Cost: `5`
+- Equipment item
+  - SKU: `EQP1`
+  - Name: `GeneratorModelA`
+  - Type: `Equipment`
+  - UoM: `PCS`
+
+Expected:
+
+- All records save without error.
+- The item appears in the item list with default cost `5`.
+
+### 2. Procurement receipt and AP
+
+1. Go to `Procurement -> Purchase Orders`.
+2. Create a PO for supplier `SUP1`.
+3. Add one line:
+   - Item: `SKU1`
+   - Qty: `10`
+   - Unit Price: `5`
+4. Approve the PO.
+5. Go to `Procurement -> Goods Receipts`.
+6. Create a GRN for:
+   - PO: the PO you just approved
+   - Warehouse: `MAIN`
+7. Confirm the `Receive From PO` table loads the open PO line automatically.
+8. Enter received quantity `10` for the PO line and save the receipt plan.
+9. Confirm the `Current Draft Lines` table shows the GRN line created from the PO receipt plan.
+10. Post the GRN.
+
+Expected:
+
+- PO total = `50`
+- GRN posts successfully
+- `Finance -> AP` shows one outstanding GRN entry for supplier `SUP1`
+- AP Amount = `50`
+- AP Outstanding = `50`
+
+### 3. Stock after receipt
+
+1. Go to `Inventory -> On Hand`.
+2. Query:
+   - Warehouse: `MAIN`
+   - Item: `SKU1`
+
+Expected:
+
+- On hand = `10`
+
+3. Go to `Reporting -> Costing`.
+4. Filter:
+   - Warehouse: `MAIN`
+   - Item: `SKU1`
+
+Expected:
+
+- On Hand = `10`
+- Default Cost = `5`
+- Weighted Avg Cost = `5`
+- Last Receipt Cost = `5`
+- Inventory Value = `50`
+
+### 4. Sales issue and AR
+
+1. Go to `Sales -> Direct Dispatches`.
+2. Create a direct dispatch:
+   - Customer: `CUS1`
+   - Warehouse: `MAIN`
+3. Add one line:
+   - Item: `SKU1`
+   - Qty: `4`
+4. Post the direct dispatch.
+
+Expected:
+
+- Dispatch posts successfully.
+- if the direct-dispatch line is an Equipment item with serial numbers and warranty/service defaults, matching equipment units are created automatically.
+
+5. Go back to `Inventory -> On Hand` and query `MAIN` + `SKU1`.
+
+Expected:
+
+- On hand = `6`
+
+6. Go to `Sales -> Invoices`.
+7. Create an invoice for customer `CUS1`.
+8. Add one line:
+   - Item: `SKU1`
+   - Qty: `4`
+   - Unit Price: `7`
+   - Discount %: `0`
+   - Tax %: `0`
+9. Post the invoice.
+
+Expected:
+
+- Invoice total = `28`
+- `Finance -> AR` shows one outstanding invoice entry for `CUS1`
+- AR Amount = `28`
+- AR Outstanding = `28`
+
+### 5. Payment and allocation
+
+1. Go to `Finance -> Payments`.
+2. Create a payment:
+   - Direction: `Incoming`
+   - Counterparty Type: `Customer`
+   - Counterparty: `CUS1`
+   - Currency: `USD`
+   - Amount: `28`
+3. Open the new payment detail page.
+4. Allocate the payment to the outstanding AR invoice for `CUS1`.
+
+Expected:
+
+- Payment detail shows:
+  - Amount = `28`
+  - Allocated = `28`
+  - Remaining = `0`
+- The allocation row points to the invoice entry.
+- `Finance -> AR` with `Outstanding only` shows no rows.
+- The invoice detail page shows `Status: Paid`.
+
+### 6. Stock take / month-end adjustment
+
+1. Go to `Inventory -> Stock Adjustments`.
+2. Create an adjustment for warehouse `MAIN`.
+3. Add one line:
+   - Item: `SKU1`
+   - Counted Qty: `5`
+   - Unit Cost: `5`
+4. Post the adjustment.
+
+Expected:
+
+- Adjustment posts successfully.
+- Stock ledger shows a signed adjustment movement of `-1`.
+
+5. Go to `Inventory -> On Hand` and query `MAIN` + `SKU1`.
+
+Expected:
+
+- On hand = `5`
+
+6. Go to `Reporting -> Costing` for `MAIN` + `SKU1`.
+
+Expected:
+
+- On Hand = `5`
+- Weighted Avg Cost = `5`
+- Inventory Value = `25`
+
+This confirms the stock-take correction is reflected in both inventory balance and valuation.
+
+### 7. Optional Service / Repair Flow
+
+Use this focused scenario when validating the current workshop workflow.
+
+Suggested extra setup:
+
+- one petty cash fund:
+  - Code: `WORKSHOP`
+  - Name: `Workshop Petty Cash`
+  - Currency: `USD`
+  - Opening Balance: `100`
+
+Steps:
+
+1. Go to `Service -> Equipment Units` and register one serialized unit for customer `CUS1`.
+   - Equipment item: `EQP1 - GeneratorModelA`
+   - Serial number: `EQP1-SN-001`
+   - enter a future `Warranty until` date
+   - set `Warranty coverage` to `Labor and Parts`
+2. Confirm the equipment-unit list shows explicit `View` / `Edit` actions and open the unit from one of them.
+3. Register one outside-purchased customer unit from `Service -> Equipment Units`:
+   - Mode: `Outside equipment`
+   - External equipment SKU: `EXT-EQP1`
+   - External equipment name: `CustomerOwnedGenerator`
+   - UoM: `PCS`
+   - Serial number: `EXT-SN-001`
+   - Customer: `CUS1`
+   - leave warranty blank
+4. Confirm the unit is created and can later be selected by searching `EXT-EQP1`, `CustomerOwnedGenerator`, or `EXT-SN-001`.
+5. Go to `Service -> Jobs` and create a job:
+   - Equipment unit: search by `EQP1`, `GeneratorModelA`, or `EQP1-SN-001`
+   - Kind: `Repair`
+   - Problem Description: `Unit does not power on`
+6. Confirm the job list shows explicit `View` / `Edit` actions and open the job detail page from the list.
+7. While the job is still open, edit the job header once and save it.
+8. Confirm the job detail page shows warranty-based entitlement and billing treatment.
+9. Create another job for the outside unit:
+   - Equipment unit: search by `EXT-EQP1`, `CustomerOwnedGenerator`, or `EXT-SN-001`
+   - Kind: `Service`
+   - Problem Description: `Customer-owned unit service`
+10. Confirm the outside-equipment job has no warranty/contract entitlement and is billable.
+11. Go to `Service -> Service Contracts` and create a contract for the same unit:
+   - Equipment unit: search by `EQP1`, `GeneratorModelA`, or `EQP1-SN-001`
+   - Type: `AMC`
+   - Coverage: `Parts Only`
+   - Start Date: yesterday
+   - End Date: 60 days from now
+12. Confirm the contract list shows explicit `View` / `Edit` actions and open the contract detail page from the list.
+13. Return to the job and click `Refresh Entitlement`.
+14. Confirm the job now shows contract-based entitlement instead of warranty.
+15. Start the job.
+16. Go to `Service -> Technicians` and create one technician:
+   - Code: `TECH1`
+   - Name: `Workshop Technician`
+   - Default Cost Rate: `10`
+   - Default Billing Rate: `25`
+17. On the job detail page, create a `Daily Field Sheet`:
+   - Prepared by: `Service Supervisor`
+   - Site / location: `Workshop`
+   - Planned work: `Diagnose, issue parts, and complete repair`
+   - Completed work: `Initial diagnosis completed`
+   - Pending work: `Issue material and complete testing`
+18. From the job detail page, link day-to-day activity to that daily sheet:
+   - add technician assignment for `TECH1`
+   - add daily progress notes
+   - create one IOU / petty-cash advance for `TECH1`
+   - create one expense voucher for an out-of-pocket or petty-cash expense
+   - create one MRN for stocked parts or lubricants
+19. Open the MRN, add available stock lines, and post it.
+20. Return to job detail and record material disposition:
+   - mark used material as `Used`
+   - return unused material as `Unused returned`
+   - record damaged or rejected material if applicable
+21. Submit and approve the daily field sheet.
+22. Go to `Service -> Work Orders` and create a work order for the job.
+23. Add one billable labor entry on the work order using technician `TECH1`.
+24. Confirm the selected technician fills cost and billing rates, then submit and approve the labor entry.
+25. Confirm the approved billable amount reflects coverage-adjusted billing when entitlement covers labor.
+26. Go to `Service -> Estimates` and create an estimate for the job.
+27. Confirm the estimate list shows explicit `View` / `Edit` actions and open the estimate detail page from the list.
+28. While the estimate is still draft, edit `Valid until` or `Terms`, save, and then add at least:
+   - one `Part` line using `SKU1`
+29. Send the estimate to the customer and confirm `Customer Approval` becomes `Pending`.
+30. Edit the sent draft estimate again and confirm the pending approval resets to `Not Sent`.
+31. Resend the estimate and then mark it customer approved.
+32. Use `Create Change Order` from the approved estimate and confirm a new draft revision opens.
+33. Submit the expense voucher created from the daily sheet.
+34. Approve and settle the claim against petty cash fund `WORKSHOP`.
+35. Convert the billable claim line into the working estimate.
+36. If the claim line used a spare-part item, confirm the new estimate line is classified as `Part`.
+37. Approve/release/settle the IOU advance or reject/cancel it if it was not used.
+38. Create and complete a service handover.
+39. Convert the handover to sales invoice using the labor source that bills approved timesheets.
+40. Open the service job detail page. Confirm the compact header, tab bar, cockpit, and process timeline fit the first viewport.
+41. Open the `Billing` tab and review closeout readiness, warranty/billing entitlement, quotations, and final invoices.
+
+Expected:
+
+- equipment units accept warranty coverage and the unit detail page allows updates
+- outside equipment can be registered without leaving the service module; the system creates an Equipment item and serialized unit together
+- ISS-sold serialized equipment can also be created automatically from posted Dispatch/AOD lines
+- service jobs and service contracts use the serialized equipment unit, but the picker displays and searches the linked Item table SKU/name as well as the unit serial number
+- the contract can be linked to the same unit and appears on both the contract list and equipment-unit detail page
+- service lists now expose explicit `View` / `Edit` entry points instead of relying only on clickable document numbers
+- the service job list shows existing job orders first; the new-job form is opened from `+ New Job Order` instead of blocking the list
+- the job detail header is compact and moves date-heavy fields behind `Show dates & details`
+- job tab and process-timeline links scroll directly to the tab content area
+- open jobs can be edited, but that header locks after the job is started
+- the job first shows warranty entitlement, then changes to contract entitlement after refresh
+- the job can be opened as `Repair` and moved to `In Progress`
+- technicians can be created in the service master page and selected on job detail labor entries
+- a daily field sheet can be created from the job detail page and becomes the running record for that day's staff, progress, IOU, expense voucher, MRN, and material disposition
+- staff/labor and progress entry views show a clear no-daily-sheet message and `Go to Daily Sheets` action when no sheet exists, not a disabled form
+- daily sheet counts increase as linked staff, progress, material, return, expense, and IOU records are added
+- job closeout is blocked until daily field sheets are submitted and approved or rejected
+- IOU advances can be recorded during a running multi-day job and remain pending until released/settled/rejected/cancelled
+- unused material returns from the job add stock back through the material disposition workflow
+- draft estimate headers and lines are editable until customer approval or rejection
+- sending a draft estimate sets customer approval to `Pending`, editing that pending draft resets it, and resending/restating approval works
+- approved estimates stay preserved and `Create Change Order` opens a new draft revision for the changed scope
+- the work order accepts labor entries and the approved labor becomes visible on the work order and job costing views
+- covered labor or part lines bill at zero where entitlement applies
+- the approved/settled billable claim can be converted into an estimate or change-order draft revision
+- petty cash balance is reduced by the settled claim amount
+- the handover invoice includes both estimate parts and approved actual labor
+- job costing reflects labor, material, expense-claim, invoice, and quoted value in one view
+
+## Verified Calculation Trail
+
+This is the tested numeric chain:
+
+- GRN receipt: `10 x 5 = 50`
+- After direct dispatch of `4`: on hand `10 - 4 = 6`
+- Sales invoice: `4 x 7 = 28`
+- Customer payment allocation: `28 - 28 = 0 outstanding`
+- Stock take adjustment: `6 - 1 = 5`
+- Final valuation: `5 x 5 = 25`
+
+## PDF / Document Check
+
+During UAT, also open at least one PDF from each area you touch:
+
+- PO PDF
+- GRN PDF
+- Invoice PDF
+- Payment PDF
+- Stock Adjustment PDF
+- one service PDF if the optional service flow is tested
+
+Expected:
+
+- Browser download/open works.
+- Document number matches the screen.
+- Core totals match the transaction.
+
+## If Something Does Not Match
+
+Check these first:
+
+1. `Master Data -> Currencies`
+Expected:
+One active base currency exists.
+
+2. `Finance -> Payments`
+Expected:
+Payment form shows active currencies.
+
+3. `Inventory -> On Hand`
+Expected:
+Warehouse and item selections match the documents you posted.
+
+4. `Audit Logs`
+Expected:
+Posted transactions appear in the audit trail.
+
+## Minimum Regression Set
+
+If time is limited, always re-test these pages after changes:
+
+- `Master Data -> Currencies`
+- `Procurement -> Goods Receipts`
+- `Sales -> Invoices`
+- `Finance -> Payments`
+- `Finance -> Petty Cash`
+- `Service -> Service Contracts`
+- `Service -> Jobs`
+- `Service -> Expense Claims`
+- `Inventory -> On Hand`
+- `Reporting -> Costing`

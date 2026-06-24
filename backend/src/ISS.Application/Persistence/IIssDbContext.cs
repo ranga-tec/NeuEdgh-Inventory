@@ -1,0 +1,96 @@
+using ISS.Domain.Audit;
+using ISS.Domain.Documents;
+using ISS.Domain.Finance;
+using ISS.Domain.Inventory;
+using ISS.Domain.MasterData;
+using ISS.Domain.Procurement;
+using ISS.Domain.Retail;
+using ISS.Domain.Sales;
+using ISS.Domain.Sequences;
+using ISS.Domain.Service;
+using ISS.Domain.Notifications;
+using ISS.Domain.Security;
+using Microsoft.EntityFrameworkCore;
+
+namespace ISS.Application.Persistence;
+
+public interface IIssDbContext
+{
+    DbSet<Company> Companies { get; }
+    DbSet<Brand> Brands { get; }
+    DbSet<UnitOfMeasure> UnitOfMeasures { get; }
+    DbSet<UnitConversion> UnitConversions { get; }
+    DbSet<PaymentType> PaymentTypes { get; }
+    DbSet<TaxCode> TaxCodes { get; }
+    DbSet<TaxConversion> TaxConversions { get; }
+    DbSet<Currency> Currencies { get; }
+    DbSet<CurrencyRate> CurrencyRates { get; }
+    DbSet<ReferenceForm> ReferenceForms { get; }
+    DbSet<ItemCategory> ItemCategories { get; }
+    DbSet<ItemSubcategory> ItemSubcategories { get; }
+    DbSet<Item> Items { get; }
+    DbSet<ItemAttachment> ItemAttachments { get; }
+    DbSet<Customer> Customers { get; }
+    DbSet<Supplier> Suppliers { get; }
+    DbSet<Warehouse> Warehouses { get; }
+    DbSet<WarehouseBin> WarehouseBins { get; }
+    DbSet<ReorderSetting> ReorderSettings { get; }
+
+    DbSet<InventoryMovement> InventoryMovements { get; }
+    DbSet<StockAdjustment> StockAdjustments { get; }
+    DbSet<StockTransfer> StockTransfers { get; }
+
+    DbSet<RequestForQuote> RequestForQuotes { get; }
+    DbSet<PurchaseRequisition> PurchaseRequisitions { get; }
+    DbSet<PurchaseOrder> PurchaseOrders { get; }
+    DbSet<GoodsReceipt> GoodsReceipts { get; }
+    DbSet<DirectPurchase> DirectPurchases { get; }
+    DbSet<SupplierInvoice> SupplierInvoices { get; }
+    DbSet<SupplierReturn> SupplierReturns { get; }
+
+    DbSet<SalesQuote> SalesQuotes { get; }
+    DbSet<SalesOrder> SalesOrders { get; }
+    DbSet<DispatchNote> DispatchNotes { get; }
+    DbSet<DirectDispatch> DirectDispatches { get; }
+    DbSet<SalesInvoice> SalesInvoices { get; }
+    DbSet<CustomerReturn> CustomerReturns { get; }
+
+    DbSet<UtilityPayment> UtilityPayments { get; }
+
+    DbSet<EquipmentUnit> EquipmentUnits { get; }
+    DbSet<ServiceContract> ServiceContracts { get; }
+    DbSet<ServiceJob> ServiceJobs { get; }
+    DbSet<ServiceEstimate> ServiceEstimates { get; }
+    DbSet<ServiceExpenseClaim> ServiceExpenseClaims { get; }
+    DbSet<ServiceHandover> ServiceHandovers { get; }
+    DbSet<ServiceTechnician> ServiceTechnicians { get; }
+    DbSet<ServiceJobOperation> ServiceJobOperations { get; }
+    DbSet<ServiceJobDailySheet> ServiceJobDailySheets { get; }
+    DbSet<ServiceJobAssignment> ServiceJobAssignments { get; }
+    DbSet<ServiceJobProgressUpdate> ServiceJobProgressUpdates { get; }
+    DbSet<ServiceJobMaterialDisposition> ServiceJobMaterialDispositions { get; }
+    DbSet<WorkOrder> WorkOrders { get; }
+    DbSet<WorkOrderTimeEntry> WorkOrderTimeEntries { get; }
+    DbSet<MaterialRequisition> MaterialRequisitions { get; }
+    DbSet<QualityCheck> QualityChecks { get; }
+
+    DbSet<AccountsReceivableEntry> AccountsReceivableEntries { get; }
+    DbSet<AccountsPayableEntry> AccountsPayableEntries { get; }
+    DbSet<LedgerAccount> LedgerAccounts { get; }
+    DbSet<Payment> Payments { get; }
+    DbSet<PettyCashFund> PettyCashFunds { get; }
+    DbSet<PettyCashIou> PettyCashIous { get; }
+    DbSet<CreditNote> CreditNotes { get; }
+    DbSet<DebitNote> DebitNotes { get; }
+    DbSet<DocumentComment> DocumentComments { get; }
+    DbSet<DocumentAttachment> DocumentAttachments { get; }
+    DbSet<NotificationOutboxItem> NotificationOutboxItems { get; }
+    DbSet<UserNotification> UserNotifications { get; }
+    DbSet<UserPermissionOverride> UserPermissionOverrides { get; }
+    DbSet<AuditLog> AuditLogs { get; }
+    DbSet<DocumentSequence> DocumentSequences { get; }
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    DbSet<TEntity> Set<TEntity>() where TEntity : class;
+    DbContext DbContext { get; }
+}

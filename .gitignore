@@ -1,0 +1,56 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backend - .NET
+backend/**/bin/
+backend/**/obj/
+backend/.vs/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Frontend - Node.js
+frontend/node_modules/
+frontend/.next/
+frontend/.nuget/
+frontend/out/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+deploy/.env
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+output/*.secret.txt
+
+# Build outputs
+dist/
+build/
+
+# Local artifacts
+.playwright-cli/
+.local-pgdata/
+.local-pgpass
+.seed-uat-last.log
+backup/
+image/
+images/
+output/
+Modification reqs/
+SS/
+data/
+image.png
+docs/testing-input-output-checklist.pdf
+frontend/iss_pw*.cjs

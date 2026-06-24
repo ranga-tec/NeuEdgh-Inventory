@@ -1,0 +1,1091 @@
+using ISS.Application.Abstractions;
+using ISS.Application.Persistence;
+using ISS.Domain.Audit;
+using ISS.Domain.Common;
+using ISS.Domain.Documents;
+using ISS.Domain.Finance;
+using ISS.Domain.Inventory;
+using ISS.Domain.MasterData;
+using ISS.Domain.Procurement;
+using ISS.Domain.Retail;
+using ISS.Domain.Sales;
+using ISS.Domain.Sequences;
+using ISS.Domain.Service;
+using ISS.Domain.Notifications;
+using ISS.Domain.Security;
+using ISS.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+
+namespace ISS.Infrastructure.Persistence;
+
+public sealed class IssDbContext(
+    DbContextOptions<IssDbContext> options,
+    ICurrentUser currentUser,
+    IClock clock) : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options), IIssDbContext
+{
+    public DbContext DbContext => this;
+
+    public DbSet<Company> Companies => Set<Company>();
+    public DbSet<Brand> Brands => Set<Brand>();
+    public DbSet<UnitOfMeasure> UnitOfMeasures => Set<UnitOfMeasure>();
+    public DbSet<UnitConversion> UnitConversions => Set<UnitConversion>();
+    public DbSet<PaymentType> PaymentTypes => Set<PaymentType>();
+    public DbSet<TaxCode> TaxCodes => Set<TaxCode>();
+    public DbSet<TaxConversion> TaxConversions => Set<TaxConversion>();
+    public DbSet<Currency> Currencies => Set<Currency>();
+    public DbSet<CurrencyRate> CurrencyRates => Set<CurrencyRate>();
+    public DbSet<ReferenceForm> ReferenceForms => Set<ReferenceForm>();
+    public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
+    public DbSet<ItemSubcategory> ItemSubcategories => Set<ItemSubcategory>();
+    public DbSet<Item> Items => Set<Item>();
+    public DbSet<ItemAttachment> ItemAttachments => Set<ItemAttachment>();
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<WarehouseBin> WarehouseBins => Set<WarehouseBin>();
+    public DbSet<ReorderSetting> ReorderSettings => Set<ReorderSetting>();
+
+    public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
+    public DbSet<StockAdjustment> StockAdjustments => Set<StockAdjustment>();
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
+
+    public DbSet<RequestForQuote> RequestForQuotes => Set<RequestForQuote>();
+    public DbSet<PurchaseRequisition> PurchaseRequisitions => Set<PurchaseRequisition>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
+    public DbSet<DirectPurchase> DirectPurchases => Set<DirectPurchase>();
+    public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
+    public DbSet<SupplierReturn> SupplierReturns => Set<SupplierReturn>();
+
+    public DbSet<SalesQuote> SalesQuotes => Set<SalesQuote>();
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<DispatchNote> DispatchNotes => Set<DispatchNote>();
+    public DbSet<DirectDispatch> DirectDispatches => Set<DirectDispatch>();
+    public DbSet<SalesInvoice> SalesInvoices => Set<SalesInvoice>();
+    public DbSet<CustomerReturn> CustomerReturns => Set<CustomerReturn>();
+
+    public DbSet<UtilityPayment> UtilityPayments => Set<UtilityPayment>();
+
+    public DbSet<EquipmentUnit> EquipmentUnits => Set<EquipmentUnit>();
+    public DbSet<ServiceContract> ServiceContracts => Set<ServiceContract>();
+    public DbSet<ServiceJob> ServiceJobs => Set<ServiceJob>();
+    public DbSet<ServiceEstimate> ServiceEstimates => Set<ServiceEstimate>();
+    public DbSet<ServiceExpenseClaim> ServiceExpenseClaims => Set<ServiceExpenseClaim>();
+    public DbSet<ServiceHandover> ServiceHandovers => Set<ServiceHandover>();
+    public DbSet<ServiceTechnician> ServiceTechnicians => Set<ServiceTechnician>();
+    public DbSet<ServiceJobOperation> ServiceJobOperations => Set<ServiceJobOperation>();
+    public DbSet<ServiceJobDailySheet> ServiceJobDailySheets => Set<ServiceJobDailySheet>();
+    public DbSet<ServiceJobAssignment> ServiceJobAssignments => Set<ServiceJobAssignment>();
+    public DbSet<ServiceJobProgressUpdate> ServiceJobProgressUpdates => Set<ServiceJobProgressUpdate>();
+    public DbSet<ServiceJobMaterialDisposition> ServiceJobMaterialDispositions => Set<ServiceJobMaterialDisposition>();
+    public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+    public DbSet<WorkOrderTimeEntry> WorkOrderTimeEntries => Set<WorkOrderTimeEntry>();
+    public DbSet<MaterialRequisition> MaterialRequisitions => Set<MaterialRequisition>();
+    public DbSet<QualityCheck> QualityChecks => Set<QualityCheck>();
+
+    public DbSet<AccountsReceivableEntry> AccountsReceivableEntries => Set<AccountsReceivableEntry>();
+    public DbSet<AccountsPayableEntry> AccountsPayableEntries => Set<AccountsPayableEntry>();
+    public DbSet<LedgerAccount> LedgerAccounts => Set<LedgerAccount>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PettyCashFund> PettyCashFunds => Set<PettyCashFund>();
+    public DbSet<PettyCashIou> PettyCashIous => Set<PettyCashIou>();
+    public DbSet<CreditNote> CreditNotes => Set<CreditNote>();
+    public DbSet<DebitNote> DebitNotes => Set<DebitNote>();
+    public DbSet<DocumentComment> DocumentComments => Set<DocumentComment>();
+    public DbSet<DocumentAttachment> DocumentAttachments => Set<DocumentAttachment>();
+    public DbSet<NotificationOutboxItem> NotificationOutboxItems => Set<NotificationOutboxItem>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
+    public DbSet<UserPermissionOverride> UserPermissionOverrides => Set<UserPermissionOverride>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+
+        builder.Entity<ApplicationUser>(entity =>
+        {
+            entity.HasIndex(x => x.CompanyId);
+            entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<UserPermissionOverride>(entity =>
+        {
+            entity.HasIndex(x => new { x.UserId, x.PermissionKey }).IsUnique();
+            entity.Property(x => x.PermissionKey).HasMaxLength(128);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Company>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(256);
+            entity.Property(x => x.EnforceAuthorizedSuppliersOnly).HasDefaultValue(false);
+        });
+
+        builder.Entity<Brand>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(256);
+        });
+
+        builder.Entity<UnitOfMeasure>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(16);
+            entity.Property(x => x.Name).HasMaxLength(64);
+        });
+
+        builder.Entity<UnitConversion>(entity =>
+        {
+            entity.HasIndex(x => new { x.FromUnitOfMeasureId, x.ToUnitOfMeasureId }).IsUnique();
+            entity.Property(x => x.Factor).HasPrecision(18, 8);
+            entity.Property(x => x.Notes).HasMaxLength(256);
+            entity.HasOne(x => x.FromUnitOfMeasure).WithMany().HasForeignKey(x => x.FromUnitOfMeasureId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ToUnitOfMeasure).WithMany().HasForeignKey(x => x.ToUnitOfMeasureId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<PaymentType>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Description).HasMaxLength(512);
+        });
+
+        builder.Entity<TaxCode>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Description).HasMaxLength(512);
+            entity.Property(x => x.RatePercent).HasPrecision(18, 4);
+        });
+
+        builder.Entity<TaxConversion>(entity =>
+        {
+            entity.HasIndex(x => new { x.SourceTaxCodeId, x.TargetTaxCodeId }).IsUnique();
+            entity.Property(x => x.Multiplier).HasPrecision(18, 8);
+            entity.Property(x => x.Notes).HasMaxLength(256);
+            entity.HasOne(x => x.SourceTaxCode).WithMany().HasForeignKey(x => x.SourceTaxCodeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.TargetTaxCode).WithMany().HasForeignKey(x => x.TargetTaxCodeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Currency>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.HasIndex(x => x.IsBase).HasFilter("\"IsBase\" = TRUE");
+            entity.Property(x => x.Code).HasMaxLength(3);
+            entity.Property(x => x.Name).HasMaxLength(64);
+            entity.Property(x => x.Symbol).HasMaxLength(8);
+        });
+
+        builder.Entity<CurrencyRate>(entity =>
+        {
+            entity.HasIndex(x => new { x.FromCurrencyId, x.ToCurrencyId, x.RateType, x.EffectiveFrom }).IsUnique();
+            entity.Property(x => x.Rate).HasPrecision(18, 8);
+            entity.Property(x => x.Source).HasMaxLength(256);
+            entity.HasOne(x => x.FromCurrency).WithMany().HasForeignKey(x => x.FromCurrencyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ToCurrency).WithMany().HasForeignKey(x => x.ToCurrencyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<LedgerAccount>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.HasIndex(x => x.ParentAccountId);
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Description).HasMaxLength(512);
+            entity.HasOne(x => x.ParentAccount).WithMany().HasForeignKey(x => x.ParentAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ReferenceForm>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Module).HasMaxLength(64);
+            entity.Property(x => x.RouteTemplate).HasMaxLength(256);
+        });
+
+        builder.Entity<ItemCategory>(entity =>
+        {
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasIndex(x => x.CompanyId);
+            entity.HasIndex(x => x.RevenueAccountId);
+            entity.HasIndex(x => x.ExpenseAccountId);
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.RevenueAccount).WithMany().HasForeignKey(x => x.RevenueAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ExpenseAccount).WithMany().HasForeignKey(x => x.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ItemSubcategory>(entity =>
+        {
+            entity.HasIndex(x => new { x.CategoryId, x.Code }).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId);
+        });
+
+        builder.Entity<Customer>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(256);
+        });
+
+        builder.Entity<Supplier>(entity =>
+        {
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasIndex(x => x.CompanyId);
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(256);
+            entity.Property(x => x.IsAuthorized).HasDefaultValue(true);
+            entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Warehouse>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+        });
+
+        builder.Entity<WarehouseBin>(entity =>
+        {
+            entity.HasIndex(x => new { x.WarehouseId, x.Code }).IsUnique();
+            entity.HasIndex(x => x.WarehouseId);
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Zone).HasMaxLength(64);
+            entity.Property(x => x.Rack).HasMaxLength(64);
+            entity.Property(x => x.Shelf).HasMaxLength(64);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Item>(entity =>
+        {
+            entity.HasIndex(x => new { x.CompanyId, x.Sku }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.Barcode }).IsUnique();
+            entity.HasIndex(x => x.CompanyId);
+            entity.HasIndex(x => x.CategoryId);
+            entity.HasIndex(x => x.SubcategoryId);
+            entity.HasIndex(x => x.RevenueAccountId);
+            entity.HasIndex(x => x.ExpenseAccountId);
+            entity.Property(x => x.Sku).HasMaxLength(64);
+            entity.Property(x => x.Name).HasMaxLength(256);
+            entity.Property(x => x.UnitOfMeasure).HasMaxLength(32);
+            entity.Property(x => x.Barcode).HasMaxLength(128);
+            entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Brand).WithMany().HasForeignKey(x => x.BrandId);
+            entity.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId);
+            entity.HasOne(x => x.Subcategory).WithMany().HasForeignKey(x => x.SubcategoryId);
+            entity.HasOne(x => x.RevenueAccount).WithMany().HasForeignKey(x => x.RevenueAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ExpenseAccount).WithMany().HasForeignKey(x => x.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ItemAttachment>(entity =>
+        {
+            entity.Property(x => x.FileName).HasMaxLength(256);
+            entity.Property(x => x.Url).HasMaxLength(2000);
+            entity.Property(x => x.ContentType).HasMaxLength(128);
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.StoragePath).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.ItemId, x.CreatedAt });
+            entity.HasOne(x => x.Item).WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<UtilityPayment>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            entity.HasIndex(x => x.ExternalReference);
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Provider).HasMaxLength(128);
+            entity.Property(x => x.AccountNumber).HasMaxLength(128);
+            entity.Property(x => x.CustomerPhone).HasMaxLength(64);
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+            entity.Property(x => x.ServiceFee).HasPrecision(18, 4);
+            entity.Property(x => x.ExternalReference).HasMaxLength(128);
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.VoidReason).HasMaxLength(512);
+            entity.HasOne<PaymentType>().WithMany().HasForeignKey(x => x.PaymentTypeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ReorderSetting>(entity =>
+        {
+            entity.HasIndex(x => new { x.WarehouseId, x.ItemId }).IsUnique();
+            entity.Property(x => x.ReorderPoint).HasPrecision(18, 4);
+            entity.Property(x => x.ReorderQuantity).HasPrecision(18, 4);
+            entity.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId);
+            entity.HasOne(x => x.Item).WithMany().HasForeignKey(x => x.ItemId);
+        });
+
+        builder.Entity<InventoryMovement>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+
+            entity.HasIndex(x => new { x.WarehouseId, x.ItemId, x.OccurredAt });
+            entity.HasIndex(x => new { x.WarehouseId, x.WarehouseBinId, x.ItemId });
+            entity.HasIndex(x => new { x.ItemId, x.SerialNumber });
+            entity.HasIndex(x => new { x.ItemId, x.BatchNumber });
+            entity.HasOne<WarehouseBin>().WithMany().HasForeignKey(x => x.WarehouseBinId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<StockAdjustment>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Reason).HasMaxLength(2000);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.StockAdjustmentId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<StockAdjustmentLine>(entity =>
+        {
+            entity.Property(x => x.QuantityDelta).HasPrecision(18, 4);
+            entity.Property(x => x.CountedQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.SystemQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.StockAdjustmentLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<StockAdjustmentLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber);
+        });
+
+        builder.Entity<StockTransfer>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.StockTransferId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<StockTransferLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.StockTransferLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<StockTransferLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber);
+        });
+
+        builder.Entity<RequestForQuote>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.RequestForQuoteId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<RequestForQuoteLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+        });
+
+        builder.Entity<PurchaseRequisition>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseRequisitionId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<PurchaseRequisitionLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+        });
+
+        builder.Entity<PurchaseOrder>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<PurchaseOrderLine>(entity =>
+        {
+            entity.Property(x => x.OrderedQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.ReceivedQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(18, 4);
+        });
+
+        builder.Entity<GoodsReceipt>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.GoodsReceiptId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<GoodsReceiptLine>(entity =>
+        {
+            entity.HasIndex(x => x.PurchaseOrderLineId);
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasOne<PurchaseOrderLine>().WithMany().HasForeignKey(x => x.PurchaseOrderLineId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.GoodsReceiptLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<GoodsReceiptLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<DirectPurchase>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => x.ServiceJobId);
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Remarks).HasMaxLength(2000);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.DirectPurchaseId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<DirectPurchaseLine>(entity =>
+        {
+            entity.HasIndex(x => x.ExpenseAccountId);
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(18, 4);
+            entity.Property(x => x.TaxPercent).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasOne(x => x.ExpenseAccount).WithMany().HasForeignKey(x => x.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.DirectPurchaseLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<DirectPurchaseLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<SupplierInvoice>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => new { x.SupplierId, x.InvoiceNumber }).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.InvoiceNumber).HasMaxLength(64);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.Property(x => x.Subtotal).HasPrecision(18, 4);
+            entity.Property(x => x.DiscountAmount).HasPrecision(18, 4);
+            entity.Property(x => x.TaxAmount).HasPrecision(18, 4);
+            entity.Property(x => x.FreightAmount).HasPrecision(18, 4);
+            entity.Property(x => x.RoundingAmount).HasPrecision(18, 4);
+        });
+
+        builder.Entity<SupplierReturn>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SupplierReturnId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<SupplierReturnLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.SupplierReturnLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<SupplierReturnLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<SalesQuote>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SalesQuoteId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<SalesQuoteLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(18, 4);
+        });
+
+        builder.Entity<SalesOrder>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SalesOrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<SalesOrderLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(18, 4);
+        });
+
+        builder.Entity<DispatchNote>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.ServiceIntervalDays);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.DispatchNoteId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<DispatchLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.DispatchLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<DispatchLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<DirectDispatch>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Reason).HasMaxLength(2000);
+            entity.Property(x => x.ServiceIntervalDays);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.DirectDispatchId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<DirectDispatchLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.DirectDispatchLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<DirectDispatchLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<SalesInvoice>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SalesInvoiceId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<SalesInvoiceLine>(entity =>
+        {
+            entity.HasIndex(x => x.RevenueAccountId);
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(18, 4);
+            entity.Property(x => x.DiscountPercent).HasPrecision(18, 4);
+            entity.Property(x => x.TaxPercent).HasPrecision(18, 4);
+            entity.HasOne(x => x.RevenueAccount).WithMany().HasForeignKey(x => x.RevenueAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<CustomerReturn>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Reason).HasMaxLength(2000);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.CustomerReturnId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<CustomerReturnLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.CustomerReturnLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<CustomerReturnLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<EquipmentUnit>(entity =>
+        {
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.Property(x => x.ServiceIntervalDays);
+        });
+
+        builder.Entity<ServiceContract>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => x.CustomerId);
+            entity.HasIndex(x => x.EquipmentUnitId);
+            entity.HasIndex(x => new { x.IsActive, x.StartDate, x.EndDate });
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<EquipmentUnit>().WithMany().HasForeignKey(x => x.EquipmentUnitId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ServiceTechnician>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(256);
+            entity.Property(x => x.Phone).HasMaxLength(64);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.Property(x => x.DefaultCostRate).HasPrecision(18, 4);
+            entity.Property(x => x.DefaultBillingRate).HasPrecision(18, 4);
+        });
+
+        builder.Entity<ServiceJob>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => x.ServiceContractId);
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.ProblemDescription).HasMaxLength(2000);
+            entity.Property(x => x.SiteLocation).HasMaxLength(512);
+            entity.Property(x => x.JobDescription).HasMaxLength(2000);
+            entity.Property(x => x.CustomerComplaint).HasMaxLength(2000);
+            entity.Property(x => x.InternalRemarks).HasMaxLength(2000);
+            entity.Property(x => x.ResponsibleOfficerName).HasMaxLength(256);
+            entity.Property(x => x.FinalInvoiceNotRequiredReason).HasMaxLength(1000);
+            entity.Property(x => x.EntitlementSummary).HasMaxLength(512);
+            entity.HasOne<ServiceContract>().WithMany().HasForeignKey(x => x.ServiceContractId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<ServiceJobOperation>(entity =>
+        {
+            entity.HasIndex(x => new { x.ServiceJobId, x.Sequence });
+            entity.HasIndex(x => x.PlannedItemId);
+            entity.Property(x => x.Name).HasMaxLength(256);
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.PlannedQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.EstimatedLaborHours).HasPrecision(18, 4);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.HasOne<ServiceJob>().WithMany().HasForeignKey(x => x.ServiceJobId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.PlannedItemId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<ServiceJobAssignment>(entity =>
+        {
+            entity.HasIndex(x => new { x.ServiceJobId, x.AssignedDate });
+            entity.HasIndex(x => x.ServiceJobDailySheetId);
+            entity.HasIndex(x => x.TechnicianId);
+            entity.Property(x => x.EmployeeName).HasMaxLength(256);
+            entity.Property(x => x.Role).HasMaxLength(128);
+            entity.Property(x => x.AssignedTask).HasMaxLength(1000);
+            entity.Property(x => x.NormalHours).HasPrecision(18, 4);
+            entity.Property(x => x.OvertimeHours).HasPrecision(18, 4);
+            entity.Property(x => x.DailyWorkDescription).HasMaxLength(2000);
+            entity.Property(x => x.RejectionReason).HasMaxLength(512);
+            entity.HasOne<ServiceJob>().WithMany().HasForeignKey(x => x.ServiceJobId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ServiceJobDailySheet>().WithMany().HasForeignKey(x => x.ServiceJobDailySheetId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<ServiceTechnician>().WithMany().HasForeignKey(x => x.TechnicianId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ServiceJobProgressUpdate>(entity =>
+        {
+            entity.HasIndex(x => new { x.ServiceJobId, x.ProgressDate });
+            entity.HasIndex(x => x.ServiceJobDailySheetId);
+            entity.Property(x => x.WorkCompleted).HasMaxLength(2000);
+            entity.Property(x => x.WorkPending).HasMaxLength(2000);
+            entity.Property(x => x.ProblemsFound).HasMaxLength(2000);
+            entity.Property(x => x.AdditionalPartsRequired).HasMaxLength(2000);
+            entity.Property(x => x.AdditionalLaborRequired).HasMaxLength(2000);
+            entity.Property(x => x.CustomerInstructions).HasMaxLength(2000);
+            entity.Property(x => x.SiteIssues).HasMaxLength(2000);
+            entity.Property(x => x.TechnicianNotes).HasMaxLength(2000);
+            entity.Property(x => x.SupervisorNotes).HasMaxLength(2000);
+            entity.HasOne<ServiceJob>().WithMany().HasForeignKey(x => x.ServiceJobId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ServiceJobDailySheet>().WithMany().HasForeignKey(x => x.ServiceJobDailySheetId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<ServiceJobDailySheet>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => new { x.ServiceJobId, x.SheetDate });
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.PreparedByName).HasMaxLength(256);
+            entity.Property(x => x.SiteLocation).HasMaxLength(512);
+            entity.Property(x => x.ShiftName).HasMaxLength(128);
+            entity.Property(x => x.WeatherOrSiteCondition).HasMaxLength(512);
+            entity.Property(x => x.WorkPlanned).HasMaxLength(2000);
+            entity.Property(x => x.WorkCompleted).HasMaxLength(2000);
+            entity.Property(x => x.WorkPending).HasMaxLength(2000);
+            entity.Property(x => x.ProblemsFound).HasMaxLength(2000);
+            entity.Property(x => x.CustomerInstructions).HasMaxLength(2000);
+            entity.Property(x => x.TechnicianNotes).HasMaxLength(2000);
+            entity.Property(x => x.SupervisorNotes).HasMaxLength(2000);
+            entity.Property(x => x.RejectionReason).HasMaxLength(512);
+            entity.HasOne<ServiceJob>().WithMany().HasForeignKey(x => x.ServiceJobId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ServiceJobMaterialDisposition>(entity =>
+        {
+            entity.HasIndex(x => x.ServiceJobId);
+            entity.HasIndex(x => x.ServiceJobDailySheetId);
+            entity.HasIndex(x => x.MaterialRequisitionId);
+            entity.HasIndex(x => x.MaterialRequisitionLineId);
+            entity.HasIndex(x => x.SupplierReturnId);
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.Property(x => x.Condition).HasMaxLength(128);
+            entity.Property(x => x.Reason).HasMaxLength(1000);
+            entity.Property(x => x.ResponsiblePerson).HasMaxLength(256);
+            entity.Property(x => x.VoidReason).HasMaxLength(512);
+            entity.HasOne<ServiceJob>().WithMany().HasForeignKey(x => x.ServiceJobId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ServiceJobDailySheet>().WithMany().HasForeignKey(x => x.ServiceJobDailySheetId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<MaterialRequisition>().WithMany().HasForeignKey(x => x.MaterialRequisitionId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<MaterialRequisitionLine>().WithMany().HasForeignKey(x => x.MaterialRequisitionLineId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<SupplierReturn>().WithMany().HasForeignKey(x => x.SupplierReturnId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.ServiceJobMaterialDispositionId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<ServiceJobMaterialDispositionSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber);
+        });
+
+        builder.Entity<ServiceEstimate>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => x.RevisedFromEstimateId);
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Terms).HasMaxLength(2000);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.ServiceEstimateId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<ServiceEstimateLine>(entity =>
+        {
+            entity.Property(x => x.Description).HasMaxLength(512);
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(18, 4);
+            entity.Property(x => x.TaxPercent).HasPrecision(18, 4);
+        });
+
+        builder.Entity<ServiceExpenseClaim>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => x.ServiceJobId);
+            entity.HasIndex(x => x.ServiceJobDailySheetId);
+            entity.HasIndex(x => x.ClaimedByUserId);
+            entity.HasIndex(x => x.SettlementPaymentTypeId);
+            entity.HasIndex(x => x.SettlementPettyCashFundId);
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.ClaimedByName).HasMaxLength(256);
+            entity.Property(x => x.MerchantName).HasMaxLength(256);
+            entity.Property(x => x.ReceiptReference).HasMaxLength(128);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.Property(x => x.RejectionReason).HasMaxLength(512);
+            entity.Property(x => x.SettlementReference).HasMaxLength(128);
+            entity.HasOne<PaymentType>().WithMany().HasForeignKey(x => x.SettlementPaymentTypeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PettyCashFund>().WithMany().HasForeignKey(x => x.SettlementPettyCashFundId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.ServiceExpenseClaimId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ServiceJobDailySheet>().WithMany().HasForeignKey(x => x.ServiceJobDailySheetId).OnDelete(DeleteBehavior.SetNull);
+        });
+        builder.Entity<ServiceExpenseClaimLine>(entity =>
+        {
+            entity.Property(x => x.Description).HasMaxLength(512);
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.HasIndex(x => x.ItemId);
+            entity.HasIndex(x => x.ExpenseAccountId);
+            entity.HasIndex(x => x.ConvertedToServiceEstimateId);
+            entity.HasIndex(x => x.ConvertedToServiceEstimateLineId);
+            entity.HasOne(x => x.ExpenseAccount).WithMany().HasForeignKey(x => x.ExpenseAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ServiceHandover>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.ItemsReturned).HasMaxLength(2000);
+            entity.Property(x => x.CustomerAcknowledgement).HasMaxLength(512);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+        });
+
+        builder.Entity<WorkOrder>(entity =>
+        {
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.HasMany(x => x.TimeEntries).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<WorkOrderTimeEntry>(entity =>
+        {
+            entity.HasIndex(x => new { x.WorkOrderId, x.WorkDate });
+            entity.HasIndex(x => x.ServiceJobId);
+            entity.HasIndex(x => x.TechnicianUserId);
+            entity.HasIndex(x => x.SalesInvoiceId);
+            entity.HasIndex(x => x.SalesInvoiceLineId);
+            entity.Property(x => x.TechnicianName).HasMaxLength(256);
+            entity.Property(x => x.WorkDescription).HasMaxLength(1000);
+            entity.Property(x => x.HoursWorked).HasPrecision(18, 4);
+            entity.Property(x => x.CostRate).HasPrecision(18, 4);
+            entity.Property(x => x.BillableHours).HasPrecision(18, 4);
+            entity.Property(x => x.BillingRate).HasPrecision(18, 4);
+            entity.Property(x => x.TaxPercent).HasPrecision(18, 4);
+            entity.Property(x => x.RejectionReason).HasMaxLength(512);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+        });
+
+        builder.Entity<MaterialRequisition>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => x.ServiceJobDailySheetId);
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Purpose).HasMaxLength(512);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.MaterialRequisitionId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ServiceJobDailySheet>().WithMany().HasForeignKey(x => x.ServiceJobDailySheetId).OnDelete(DeleteBehavior.SetNull);
+        });
+        builder.Entity<MaterialRequisitionLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.MaterialRequisitionLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<MaterialRequisitionLineSerial>(entity =>
+        {
+            entity.Property(x => x.SerialNumber).HasMaxLength(128);
+            entity.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<AccountsReceivableEntry>(entity =>
+        {
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+            entity.Property(x => x.Outstanding).HasPrecision(18, 4);
+        });
+
+        builder.Entity<AccountsPayableEntry>(entity =>
+        {
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+            entity.Property(x => x.Outstanding).HasPrecision(18, 4);
+        });
+
+        builder.Entity<Payment>(entity =>
+        {
+            entity.Property(x => x.ReferenceNumber).HasMaxLength(64);
+            entity.Property(x => x.CurrencyCode).HasMaxLength(3);
+            entity.Property(x => x.ExchangeRate).HasPrecision(18, 8);
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+            entity.HasOne(x => x.PaymentType).WithMany().HasForeignKey(x => x.PaymentTypeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Allocations).WithOne().HasForeignKey(x => x.PaymentId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<PaymentAllocation>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+        });
+
+        builder.Entity<PettyCashFund>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.CurrencyCode).HasMaxLength(3);
+            entity.Property(x => x.CustodianName).HasMaxLength(128);
+            entity.Property(x => x.Notes).HasMaxLength(512);
+            entity.HasMany(x => x.Transactions).WithOne().HasForeignKey(x => x.PettyCashFundId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<PettyCashTransaction>(entity =>
+        {
+            entity.HasIndex(x => new { x.PettyCashFundId, x.OccurredAt });
+            entity.HasIndex(x => new { x.ReferenceType, x.ReferenceId });
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.Property(x => x.ReferenceNumber).HasMaxLength(128);
+            entity.Property(x => x.Notes).HasMaxLength(512);
+        });
+
+        builder.Entity<PettyCashIou>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => x.ServiceJobId);
+            entity.HasIndex(x => x.ServiceJobDailySheetId);
+            entity.HasIndex(x => x.RequestedByUserId);
+            entity.HasIndex(x => x.PettyCashFundId);
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.RequestedByName).HasMaxLength(256);
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+            entity.Property(x => x.Purpose).HasMaxLength(1000);
+            entity.Property(x => x.RejectionReason).HasMaxLength(512);
+            entity.Property(x => x.ReleaseReference).HasMaxLength(128);
+            entity.Property(x => x.SettledAmount).HasPrecision(18, 4);
+            entity.Property(x => x.SettlementReference).HasMaxLength(128);
+            entity.HasOne<PettyCashFund>().WithMany().HasForeignKey(x => x.PettyCashFundId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ServiceJobDailySheet>().WithMany().HasForeignKey(x => x.ServiceJobDailySheetId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<CreditNote>(entity =>
+        {
+            entity.HasIndex(x => x.ReferenceNumber).IsUnique();
+            entity.Property(x => x.ReferenceNumber).HasMaxLength(64);
+            entity.Property(x => x.SourceReferenceType).HasMaxLength(64);
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+            entity.Property(x => x.RemainingAmount).HasPrecision(18, 4);
+            entity.HasMany(x => x.Allocations).WithOne().HasForeignKey(x => x.CreditNoteId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<CreditNoteAllocation>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+        });
+
+        builder.Entity<DebitNote>(entity =>
+        {
+            entity.HasIndex(x => x.ReferenceNumber).IsUnique();
+            entity.Property(x => x.ReferenceNumber).HasMaxLength(64);
+            entity.Property(x => x.SourceReferenceType).HasMaxLength(64);
+            entity.Property(x => x.Amount).HasPrecision(18, 4);
+        });
+
+        builder.Entity<DocumentComment>(entity =>
+        {
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.Property(x => x.Text).HasMaxLength(4000);
+            entity.HasIndex(x => new { x.ReferenceType, x.ReferenceId, x.CreatedAt });
+        });
+
+        builder.Entity<DocumentAttachment>(entity =>
+        {
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.Property(x => x.FileName).HasMaxLength(256);
+            entity.Property(x => x.Url).HasMaxLength(2000);
+            entity.Property(x => x.ContentType).HasMaxLength(128);
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.StoragePath).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.ReferenceType, x.ReferenceId, x.CreatedAt });
+        });
+
+        builder.Entity<NotificationOutboxItem>(entity =>
+        {
+            entity.Property(x => x.Recipient).HasMaxLength(256);
+            entity.Property(x => x.Subject).HasMaxLength(256);
+            entity.Property(x => x.Body).HasMaxLength(8000);
+            entity.Property(x => x.LastError).HasMaxLength(2000);
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.HasIndex(x => new { x.Status, x.NextAttemptAt });
+        });
+
+        builder.Entity<UserNotification>(entity =>
+        {
+            entity.HasIndex(x => new { x.RecipientUserId, x.ReadAt, x.NotificationCreatedAt });
+            entity.HasIndex(x => new { x.ReferenceType, x.ReferenceId });
+            entity.Property(x => x.Title).HasMaxLength(160);
+            entity.Property(x => x.Message).HasMaxLength(1000);
+            entity.Property(x => x.Href).HasMaxLength(512);
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AuditLog>(entity =>
+        {
+            entity.Property(x => x.TableName).HasMaxLength(256);
+            entity.Property(x => x.Key).HasMaxLength(256);
+        });
+
+        builder.Entity<DocumentSequence>(entity =>
+        {
+            entity.HasIndex(x => x.DocumentType).IsUnique();
+            entity.Property(x => x.DocumentType).HasMaxLength(64);
+            entity.Property(x => x.Prefix).HasMaxLength(16);
+        });
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyAuditing();
+        AddAuditLogs();
+        return await base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void ApplyAuditing()
+    {
+        var now = clock.UtcNow;
+        var userId = currentUser.UserId;
+
+        foreach (var entry in ChangeTracker.Entries<AuditableEntity>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
+                entry.Entity.CreatedBy = userId;
+                entry.Entity.LastModifiedAt = now;
+                entry.Entity.LastModifiedBy = userId;
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.LastModifiedAt = now;
+                entry.Entity.LastModifiedBy = userId;
+            }
+        }
+    }
+
+    private void AddAuditLogs()
+    {
+        ChangeTracker.DetectChanges();
+
+        var now = clock.UtcNow;
+        var userId = currentUser.UserId;
+
+        var entriesToAudit = ChangeTracker.Entries()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .ToList();
+
+        foreach (var entry in entriesToAudit)
+        {
+            if (entry.Entity is AuditLog)
+            {
+                continue;
+            }
+
+            if (entry.Entity is IdentityUser<Guid> or IdentityRole<Guid>)
+            {
+                continue;
+            }
+
+            var tableName = entry.Metadata.GetTableName() ?? entry.Metadata.Name;
+            var action = entry.State switch
+            {
+                EntityState.Added => AuditAction.Insert,
+                EntityState.Modified => AuditAction.Update,
+                EntityState.Deleted => AuditAction.Delete,
+                _ => throw new InvalidOperationException("Unsupported audit state.")
+            };
+
+            var keyValue = entry.Properties.FirstOrDefault(p => p.Metadata.IsPrimaryKey())?.CurrentValue?.ToString()
+                           ?? string.Empty;
+
+            var changes = new Dictionary<string, object?>();
+
+            foreach (var prop in entry.Properties)
+            {
+                if (prop.Metadata.IsPrimaryKey())
+                {
+                    continue;
+                }
+
+                if (prop.Metadata.IsShadowProperty())
+                {
+                    continue;
+                }
+
+                var propertyInfo = prop.Metadata.PropertyInfo;
+                var isSensitive = propertyInfo?.GetCustomAttributes(typeof(AuditSensitiveAttribute), inherit: true).Any() == true;
+                object? currentValue = isSensitive && prop.CurrentValue is not null ? "[REDACTED]" : prop.CurrentValue;
+                object? originalValue = isSensitive && prop.OriginalValue is not null ? "[REDACTED]" : prop.OriginalValue;
+
+                if (entry.State == EntityState.Added)
+                {
+                    changes[prop.Metadata.Name] = new { old = (object?)null, @new = currentValue };
+                }
+                else if (entry.State == EntityState.Deleted)
+                {
+                    changes[prop.Metadata.Name] = new { old = originalValue, @new = (object?)null };
+                }
+                else if (entry.State == EntityState.Modified && prop.IsModified)
+                {
+                    changes[prop.Metadata.Name] = new { old = originalValue, @new = currentValue };
+                }
+            }
+
+            if (changes.Count == 0)
+            {
+                continue;
+            }
+
+            var changesJson = JsonSerializer.Serialize(changes);
+            AuditLogs.Add(new AuditLog(now, userId, tableName, action, keyValue, changesJson));
+        }
+    }
+}

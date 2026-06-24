@@ -1,0 +1,123 @@
+import Link from "next/link";
+import { backendFetchJson } from "@/lib/backend.server";
+import { ItemInlineLink } from "@/components/InlineLink";
+import { Card, SecondaryLink } from "@/components/ui";
+import { SalesOrderActions } from "../SalesOrderActions";
+import { SalesOrderLineAddForm } from "../SalesOrderLineAddForm";
+import { SalesOrderLinesEditor } from "../SalesOrderLinesEditor";
+import { DocumentCollaborationPanel } from "@/components/DocumentCollaborationPanel";
+import { DocumentDirectEditNotice } from "@/components/DocumentDirectEditNotice";
+
+type SalesOrderDto = {
+  id: string;
+  number: string;
+  customerId: string;
+  orderDate: string;
+  status: number;
+  total: number;
+  lines: { id: string; itemId: string; quantity: number; unitPrice: number; lineTotal: number }[];
+};
+
+type CustomerDto = { id: string; code: string; name: string };
+type ItemDto = { id: string; sku: string; name: string };
+
+const statusLabel: Record<number, string> = {
+  0: "Draft",
+  1: "Confirmed",
+  2: "Fulfilled",
+  3: "Closed",
+  4: "Cancelled",
+};
+
+export default async function SalesOrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ mode?: string }>;
+}) {
+  const { id } = await params;
+  const { mode } = await searchParams;
+  const startInEditMode = mode === "edit";
+
+  const [order, customers, items] = await Promise.all([
+    backendFetchJson<SalesOrderDto>(`/sales/orders/${id}`),
+    backendFetchJson<CustomerDto[]>("/customers"),
+    backendFetchJson<ItemDto[]>("/items"),
+  ]);
+
+  const customerById = new Map(customers.map((c) => [c.id, c]));
+  const isDraft = order.status === 0;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="text-sm text-zinc-500">
+          <Link href="/sales/orders" className="hover:underline">
+            Orders
+          </Link>{" "}
+          / <span className="font-mono text-xs">{order.number}</span>
+        </div>
+        <h1 className="mt-1 text-2xl font-semibold">Order {order.number}</h1>
+        <div className="mt-2 flex flex-wrap gap-3 text-sm text-zinc-600 dark:text-zinc-400">
+          <div>
+            Customer:{" "}
+            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              {customerById.get(order.customerId)?.code ?? order.customerId}
+            </span>
+          </div>
+          <div>Status: {statusLabel[order.status] ?? order.status}</div>
+          <div>Date: {new Date(order.orderDate).toLocaleString()}</div>
+          <div>Total: {order.total}</div>
+        </div>
+      </div>
+
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-semibold">Actions</div>
+          <SecondaryLink
+            href={`/api/backend/sales/orders/${order.id}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Download PDF
+          </SecondaryLink>
+        </div>
+        <SalesOrderActions salesOrderId={order.id} canConfirm={isDraft && order.lines.length > 0} />
+      </Card>
+
+      {isDraft ? (
+        startInEditMode ? (
+          <DocumentDirectEditNotice addLineHref={`/sales/orders/${order.id}`} />
+        ) : (
+          <Card>
+            <div className="mb-3 text-sm font-semibold">Add line</div>
+            <SalesOrderLineAddForm salesOrderId={order.id} items={items} />
+          </Card>
+        )
+      ) : null}
+
+      <Card>
+        <div className="mb-3 text-sm font-semibold">Lines</div>
+        <SalesOrderLinesEditor
+          salesOrderId={order.id}
+          lines={order.lines}
+          itemLabelById={new Map(
+            items.map((item) => [
+              item.id,
+              <ItemInlineLink key={item.id} itemId={item.id}>
+                {`${item.sku} - ${item.name}`}
+              </ItemInlineLink>,
+            ]),
+          )}
+          itemSearchLabelById={new Map(items.map((item) => [item.id, `${item.sku} ${item.name}`.toLowerCase()]))}
+          startInEditMode={startInEditMode}
+          canEdit={isDraft}
+        />
+      </Card>
+
+      <DocumentCollaborationPanel referenceType="SO" referenceId={id} />
+    </div>
+  );
+}
+

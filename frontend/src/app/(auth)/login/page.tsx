@@ -1,0 +1,259 @@
+"use client";
+
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+
+type Mode = "login" | "register";
+
+type AuthCapabilities = {
+  registrationAllowed: boolean;
+  bootstrapRegistrationOnly: boolean;
+  selfRegistrationEnabled: boolean;
+  hasUsers: boolean;
+};
+
+const defaultSelfRegistrationEnabled = (() => {
+  const configured = process.env.NEXT_PUBLIC_ISS_ALLOW_SELF_REGISTRATION;
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  return process.env.NODE_ENV !== "production";
+})();
+
+function LoginPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const nextUrl = useMemo(() => searchParams.get("next") ?? "/", [searchParams]);
+  const [mode, setMode] = useState<Mode>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
+  const [capabilitiesBusy, setCapabilitiesBusy] = useState(true);
+
+  const registrationAllowed =
+    capabilities?.registrationAllowed ?? defaultSelfRegistrationEnabled;
+  const bootstrapRegistrationOnly = capabilities?.bootstrapRegistrationOnly ?? false;
+  const hasUsers = capabilities?.hasUsers ?? true;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCapabilities() {
+      try {
+        const resp = await fetch("/api/auth/capabilities", { cache: "no-store" });
+        if (!resp.ok) {
+          throw new Error(await readError(resp));
+        }
+
+        const data = (await resp.json()) as AuthCapabilities;
+        if (!cancelled) {
+          setCapabilities(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setCapabilities(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setCapabilitiesBusy(false);
+        }
+      }
+    }
+
+    void loadCapabilities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mode === "register" && !registrationAllowed) {
+      setMode("login");
+    }
+  }, [mode, registrationAllowed]);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+
+    try {
+      if (mode === "register" && !registrationAllowed) {
+        throw new Error("Registration is disabled. Contact an administrator.");
+      }
+
+      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+      const payload =
+        mode === "login"
+          ? { email, password }
+          : { email, password, displayName: displayName || undefined };
+
+      const resp = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        throw new Error(await readError(resp));
+      }
+
+      router.replace(nextUrl);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-8">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(920px_420px_at_50%_-20%,var(--orb-a),transparent_66%),radial-gradient(900px_440px_at_110%_120%,var(--orb-b),transparent_72%)]" />
+
+      <div className="relative w-full max-w-md rounded-3xl border border-[var(--card-border)] bg-[var(--card-bg)] p-7 shadow-[var(--shadow-card)] backdrop-blur-xl sm:p-8">
+        <div className="mb-6">
+          <div className="mb-1 inline-flex rounded-full border border-[var(--input-border)] bg-[var(--accent-muted)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--link)]">
+            ISS ERP Portal
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {mode === "login" ? "Sign in" : "Create account"}
+          </h1>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            {mode === "login"
+              ? "Use your ISS ERP credentials."
+              : bootstrapRegistrationOnly
+                ? "Create the first admin account for this system."
+                : "Create your account."}
+          </p>
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          {mode === "register" ? (
+            <div>
+              <label className="mb-1 block text-sm font-medium">Display name</label>
+              <input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full rounded-xl border border-[var(--input-border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ring-accent)] placeholder:text-[var(--muted-foreground)]/80"
+                placeholder="Admin"
+              />
+            </div>
+          ) : null}
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full rounded-xl border border-[var(--input-border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ring-accent)] placeholder:text-[var(--muted-foreground)]/80"
+              placeholder="admin@company.lk"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full rounded-xl border border-[var(--input-border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ring-accent)] placeholder:text-[var(--muted-foreground)]/80"
+              placeholder="Passw0rd1"
+            />
+          </div>
+
+          {error ? (
+            <div className="rounded-xl border border-[var(--danger)]/35 bg-[var(--danger-muted)] p-3 text-sm text-[var(--danger)]">
+              {error}
+            </div>
+          ) : null}
+
+          {!hasUsers && !registrationAllowed && !capabilitiesBusy ? (
+            <div className="rounded-xl border border-[var(--danger)]/35 bg-[var(--danger-muted)] p-3 text-sm text-[var(--danger)]">
+              No users exist yet, and bootstrap registration is disabled on the server.
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="inline-flex w-full items-center justify-center rounded-xl bg-[var(--accent)] px-3.5 py-2.5 text-sm font-semibold text-[var(--accent-contrast)] shadow-[var(--shadow-button)] transition-all duration-200 hover:-translate-y-px hover:bg-[var(--accent-hover)] hover:shadow-[var(--shadow-button)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-accent)] disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            {busy
+              ? mode === "login"
+                ? "Signing in..."
+                : "Creating..."
+              : mode === "login"
+                ? "Sign in"
+                : "Create account"}
+          </button>
+        </form>
+
+        <div className="mt-4 text-center text-sm text-[var(--muted-foreground)]">
+          {capabilitiesBusy ? (
+            <span>Checking account options...</span>
+          ) : mode === "login" && registrationAllowed ? (
+            <button
+              type="button"
+              className="font-semibold text-[var(--link)] underline underline-offset-2 transition-colors hover:text-[var(--link-hover)]"
+              onClick={() => setMode("register")}
+            >
+              {bootstrapRegistrationOnly ? "Create first admin account" : "Create an account"}
+            </button>
+          ) : mode === "register" ? (
+            <button
+              type="button"
+              className="font-semibold text-[var(--link)] underline underline-offset-2 transition-colors hover:text-[var(--link-hover)]"
+              onClick={() => setMode("login")}
+            >
+              Back to sign in
+            </button>
+          ) : (
+            <span>Account registration is disabled.</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="w-full max-w-md rounded-3xl border border-[var(--card-border)] bg-[var(--card-bg)] p-6 shadow-[var(--shadow-card)] backdrop-blur-xl">
+            <div className="text-sm text-[var(--muted-foreground)]">Loading...</div>
+          </div>
+        </div>
+      }
+    >
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+async function readError(resp: Response) {
+  if (resp.status === 401) {
+    return "Incorrect email or password.";
+  }
+
+  const text = await resp.text();
+  if (!text) {
+    return `${resp.status} ${resp.statusText}`;
+  }
+
+  try {
+    const data = JSON.parse(text) as { error?: string; detail?: string; title?: string };
+    return data.detail || data.error || data.title || text;
+  } catch {
+    return text;
+  }
+}

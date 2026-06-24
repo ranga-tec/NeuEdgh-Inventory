@@ -1,0 +1,35 @@
+namespace ISS.Application.Common;
+
+public static class ReferenceTypes
+{
+    public const string DirectDispatch = "DDN";
+    public const string DirectPurchase = "DPR";
+    public const string CustomerReturn = "CRTN";
+    public const string ServiceContract = "SC";
+    public const string ServiceEstimate = "SE";
+    public const string ServiceHandover = "SH";
+    public const string WorkOrder = "WO";
+    public const string WorkOrderTimeEntry = "WOTE";
+    public const string GoodsReceipt = "GRN";
+    public const string PurchaseRequisition = "PR";
+    public const string RequestForQuote = "RFQ";
+    public const string PurchaseOrder = "PO";
+    public const string SupplierInvoice = "SINV";
+    public const string SupplierReturn = "SR";
+    public const string DispatchNote = "DN";
+    public const string SalesQuote = "SQ";
+    public const string SalesOrder = "SO";
+    public const string SalesInvoice = "INV";
+    public const string MaterialRequisition = "MR";
+    public const string ServiceJobMaterialDisposition = "SJMD";
+    public const string ServiceJobDailySheet = "SJDS";
+    public const string ServiceJobAssignment = "SJA";
+    public const string ServiceExpenseClaim = "SEC";
+    public const string PettyCashFund = "PCF";
+    public const string PettyCashIou = "IOU";
+    public const string StockAdjustment = "ADJ";
+    public const string StockTransfer = "TRF";
+    public const string Payment = "PAY";
+    public const string CreditNote = "CN";
+    public const string DebitNote = "DBN";
+}

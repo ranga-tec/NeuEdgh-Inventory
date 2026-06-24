@@ -1,0 +1,552 @@
+using ISS.Application.Abstractions;
+using ISS.Application.Common;
+using ISS.Application.Persistence;
+using ISS.Domain.Common;
+using ISS.Domain.Finance;
+using ISS.Domain.Service;
+using Microsoft.EntityFrameworkCore;
+
+namespace ISS.Application.Services;
+
+public sealed class FinanceService(
+    IIssDbContext dbContext,
+    IDocumentNumberService documentNumberService,
+    IClock clock)
+{
+    public async Task<Guid> CreatePettyCashFundAsync(
+        string code,
+        string name,
+        string currencyCode,
+        string? custodianName,
+        string? notes,
+        decimal? openingBalance,
+        DateTimeOffset? openedAt,
+        string? openingReferenceNumber,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureCurrencyIsActiveAsync(currencyCode, cancellationToken);
+
+        var fund = new PettyCashFund(code, name, currencyCode, custodianName, notes);
+        await dbContext.PettyCashFunds.AddAsync(fund, cancellationToken);
+
+        if (openingBalance is > 0m)
+        {
+            var openingTransaction = fund.AddOpeningBalance(
+                openingBalance.Value,
+                openedAt ?? clock.UtcNow,
+                openingReferenceNumber,
+                "Opening balance");
+            dbContext.DbContext.Add(openingTransaction);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return fund.Id;
+    }
+
+    public async Task UpdatePettyCashFundAsync(
+        Guid pettyCashFundId,
+        string code,
+        string name,
+        string currencyCode,
+        string? custodianName,
+        string? notes,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        var fund = await dbContext.PettyCashFunds
+            .FirstOrDefaultAsync(x => x.Id == pettyCashFundId, cancellationToken)
+            ?? throw new NotFoundException("Petty cash fund not found.");
+
+        await EnsureCurrencyIsActiveAsync(currencyCode, cancellationToken);
+        fund.Update(code, name, currencyCode, custodianName, notes, isActive);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AddPettyCashTopUpAsync(
+        Guid pettyCashFundId,
+        decimal amount,
+        DateTimeOffset? occurredAt,
+        string? referenceNumber,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        var fund = await dbContext.PettyCashFunds
+            .Include(x => x.Transactions)
+            .FirstOrDefaultAsync(x => x.Id == pettyCashFundId, cancellationToken)
+            ?? throw new NotFoundException("Petty cash fund not found.");
+
+        var transaction = fund.AddTopUp(amount, occurredAt ?? clock.UtcNow, referenceNumber, notes);
+        dbContext.DbContext.Add(transaction);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AddPettyCashAdjustmentAsync(
+        Guid pettyCashFundId,
+        decimal amount,
+        PettyCashTransactionDirection direction,
+        DateTimeOffset? occurredAt,
+        string? referenceNumber,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        var fund = await dbContext.PettyCashFunds
+            .Include(x => x.Transactions)
+            .FirstOrDefaultAsync(x => x.Id == pettyCashFundId, cancellationToken)
+            ?? throw new NotFoundException("Petty cash fund not found.");
+
+        var transaction = fund.AddAdjustment(amount, direction, occurredAt ?? clock.UtcNow, referenceNumber, notes);
+        dbContext.DbContext.Add(transaction);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<Guid> CreatePettyCashIouAsync(
+        Guid serviceJobId,
+        Guid requestedByUserId,
+        string requestedByName,
+        decimal amount,
+        string purpose,
+        DateTimeOffset? expectedSettlementAt,
+        Guid? serviceJobDailySheetId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var jobStatus = await dbContext.ServiceJobs.AsNoTracking()
+            .Where(x => x.Id == serviceJobId)
+            .Select(x => (ServiceJobStatus?)x.Status)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("Service job not found.");
+
+        if (jobStatus == ServiceJobStatus.Closed)
+        {
+            throw new DomainValidationException("Closed service jobs cannot receive new IOUs.");
+        }
+
+        if (serviceJobDailySheetId is not null)
+        {
+            var dailySheet = await dbContext.ServiceJobDailySheets.AsNoTracking()
+                .Where(x => x.Id == serviceJobDailySheetId.Value)
+                .Select(x => new { x.ServiceJobId, x.Status })
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new NotFoundException("Service job daily sheet not found.");
+
+            if (dailySheet.ServiceJobId != serviceJobId)
+            {
+                throw new DomainValidationException("Daily sheet does not belong to this service job.");
+            }
+
+            if (dailySheet.Status == ServiceJobDailySheetStatus.Approved)
+            {
+                throw new DomainValidationException("Approved daily sheets cannot receive new IOUs.");
+            }
+        }
+
+        var number = await documentNumberService.NextAsync("IOU", "IOU", cancellationToken);
+        var iou = new PettyCashIou(
+            number,
+            serviceJobId,
+            requestedByUserId,
+            requestedByName,
+            amount,
+            purpose,
+            clock.UtcNow,
+            expectedSettlementAt,
+            serviceJobDailySheetId);
+        await dbContext.PettyCashIous.AddAsync(iou, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return iou.Id;
+    }
+
+    public async Task SubmitPettyCashIouAsync(Guid iouId, CancellationToken cancellationToken = default)
+    {
+        var iou = await dbContext.PettyCashIous.FirstOrDefaultAsync(x => x.Id == iouId, cancellationToken)
+                  ?? throw new NotFoundException("Petty cash IOU not found.");
+        iou.Submit(clock.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ApprovePettyCashIouAsync(Guid iouId, Guid approvedByUserId, CancellationToken cancellationToken = default)
+    {
+        var iou = await dbContext.PettyCashIous.FirstOrDefaultAsync(x => x.Id == iouId, cancellationToken)
+                  ?? throw new NotFoundException("Petty cash IOU not found.");
+        iou.Approve(approvedByUserId, clock.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task RejectPettyCashIouAsync(Guid iouId, string? reason, CancellationToken cancellationToken = default)
+    {
+        var iou = await dbContext.PettyCashIous.FirstOrDefaultAsync(x => x.Id == iouId, cancellationToken)
+                  ?? throw new NotFoundException("Petty cash IOU not found.");
+        iou.Reject(clock.UtcNow, reason);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ReleasePettyCashIouAsync(
+        Guid iouId,
+        Guid pettyCashFundId,
+        string? releaseReference,
+        CancellationToken cancellationToken = default)
+    {
+        var iou = await dbContext.PettyCashIous.FirstOrDefaultAsync(x => x.Id == iouId, cancellationToken)
+                  ?? throw new NotFoundException("Petty cash IOU not found.");
+
+        var fund = await dbContext.PettyCashFunds
+            .Include(x => x.Transactions)
+            .FirstOrDefaultAsync(x => x.Id == pettyCashFundId, cancellationToken)
+            ?? throw new NotFoundException("Petty cash fund not found.");
+
+        iou.Release(pettyCashFundId, clock.UtcNow, releaseReference);
+        var transaction = fund.RecordIouRelease(iou.Amount, clock.UtcNow, iou.Id, iou.Number, releaseReference);
+        dbContext.DbContext.Add(transaction);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SettlePettyCashIouAsync(
+        Guid iouId,
+        decimal settledAmount,
+        string? settlementReference,
+        CancellationToken cancellationToken = default)
+    {
+        var iou = await dbContext.PettyCashIous.FirstOrDefaultAsync(x => x.Id == iouId, cancellationToken)
+                  ?? throw new NotFoundException("Petty cash IOU not found.");
+
+        var pettyCashFundId = iou.PettyCashFundId
+                              ?? throw new DomainValidationException("IOU must be released from a petty cash fund before settlement.");
+
+        var fund = await dbContext.PettyCashFunds
+            .Include(x => x.Transactions)
+            .FirstOrDefaultAsync(x => x.Id == pettyCashFundId, cancellationToken)
+            ?? throw new NotFoundException("Petty cash fund not found.");
+
+        if (settledAmount > iou.Amount)
+        {
+            throw new DomainValidationException("IOU settlement cannot exceed released amount.");
+        }
+
+        iou.Settle(settledAmount, clock.UtcNow, settlementReference);
+        var returnAmount = iou.Amount - settledAmount;
+        if (returnAmount > 0m)
+        {
+            var transaction = fund.RecordIouSettlement(returnAmount, clock.UtcNow, iou.Id, iou.Number, settlementReference);
+            dbContext.DbContext.Add(transaction);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<Guid> CreatePaymentAsync(
+        PaymentDirection direction,
+        CounterpartyType counterpartyType,
+        Guid counterpartyId,
+        Guid? paymentTypeId,
+        string? currencyCode,
+        decimal? exchangeRate,
+        decimal amount,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        if (paymentTypeId is not null)
+        {
+            var paymentTypeExists = await dbContext.PaymentTypes.AsNoTracking()
+                .AnyAsync(x => x.Id == paymentTypeId.Value && x.IsActive, cancellationToken);
+            if (!paymentTypeExists)
+            {
+                throw new DomainValidationException("Selected payment type is invalid or inactive.");
+            }
+        }
+
+        var baseCurrency = await dbContext.Currencies.AsNoTracking()
+            .Where(x => x.IsActive && x.IsBase)
+            .Select(x => x.Code)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? "USD";
+
+        var resolvedCurrencyCode = string.IsNullOrWhiteSpace(currencyCode)
+            ? baseCurrency
+            : currencyCode.Trim().ToUpperInvariant();
+
+        var currencyExists = await dbContext.Currencies.AsNoTracking()
+            .AnyAsync(x => x.Code == resolvedCurrencyCode && x.IsActive, cancellationToken);
+        if (!currencyExists)
+        {
+            throw new DomainValidationException("Selected currency is invalid or inactive.");
+        }
+
+        var resolvedExchangeRate = exchangeRate;
+        if (resolvedCurrencyCode == baseCurrency)
+        {
+            resolvedExchangeRate = 1m;
+        }
+        else if (resolvedExchangeRate is null)
+        {
+            resolvedExchangeRate = await (
+                from rate in dbContext.CurrencyRates.AsNoTracking()
+                join fromCurrency in dbContext.Currencies.AsNoTracking() on rate.FromCurrencyId equals fromCurrency.Id
+                join toCurrency in dbContext.Currencies.AsNoTracking() on rate.ToCurrencyId equals toCurrency.Id
+                where rate.IsActive
+                      && fromCurrency.Code == resolvedCurrencyCode
+                      && toCurrency.Code == baseCurrency
+                orderby rate.EffectiveFrom descending
+                select (decimal?)rate.Rate)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (resolvedExchangeRate is null)
+            {
+                throw new DomainValidationException($"No active FX rate found from {resolvedCurrencyCode} to {baseCurrency}. Provide exchange rate.");
+            }
+        }
+
+        var reference = await documentNumberService.NextAsync("PAY", "PAY", cancellationToken);
+        var payment = new Payment(reference, direction, counterpartyType, counterpartyId, paymentTypeId, resolvedCurrencyCode, resolvedExchangeRate.Value, amount, clock.UtcNow, notes);
+        await dbContext.Payments.AddAsync(payment, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return payment.Id;
+    }
+
+    public async Task AllocatePaymentToArAsync(Guid paymentId, Guid arEntryId, decimal amount, CancellationToken cancellationToken = default)
+    {
+        var payment = await dbContext.Payments.Include(x => x.Allocations).FirstOrDefaultAsync(x => x.Id == paymentId, cancellationToken)
+                      ?? throw new NotFoundException("Payment not found.");
+
+        var ar = await dbContext.AccountsReceivableEntries.FirstOrDefaultAsync(x => x.Id == arEntryId, cancellationToken)
+                 ?? throw new NotFoundException("AR entry not found.");
+
+        if (amount <= 0)
+        {
+            throw new DomainValidationException("Allocation amount must be positive.");
+        }
+
+        if (amount > ar.Outstanding)
+        {
+            throw new DomainValidationException("Allocation exceeds outstanding amount.");
+        }
+
+        var allocation = payment.AllocateToAr(ar.Id, amount);
+        dbContext.DbContext.Add(allocation);
+        ar.ApplyPayment(amount);
+
+        await MarkInvoicePaidIfSettledAsync(ar, cancellationToken);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AllocatePaymentToApAsync(Guid paymentId, Guid apEntryId, decimal amount, CancellationToken cancellationToken = default)
+    {
+        var payment = await dbContext.Payments.Include(x => x.Allocations).FirstOrDefaultAsync(x => x.Id == paymentId, cancellationToken)
+                      ?? throw new NotFoundException("Payment not found.");
+
+        var ap = await dbContext.AccountsPayableEntries.FirstOrDefaultAsync(x => x.Id == apEntryId, cancellationToken)
+                 ?? throw new NotFoundException("AP entry not found.");
+
+        if (amount <= 0)
+        {
+            throw new DomainValidationException("Allocation amount must be positive.");
+        }
+
+        if (amount > ap.Outstanding)
+        {
+            throw new DomainValidationException("Allocation exceeds outstanding amount.");
+        }
+
+        var allocation = payment.AllocateToAp(ap.Id, amount);
+        dbContext.DbContext.Add(allocation);
+        ap.ApplyPayment(amount);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<Guid> CreateCreditNoteAsync(
+        CounterpartyType counterpartyType,
+        Guid counterpartyId,
+        decimal amount,
+        string? notes,
+        string? sourceReferenceType = null,
+        Guid? sourceReferenceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reference = await documentNumberService.NextAsync(ReferenceTypes.CreditNote, ReferenceTypes.CreditNote, cancellationToken);
+        var creditNote = new CreditNote(reference, counterpartyType, counterpartyId, amount, clock.UtcNow, notes, sourceReferenceType, sourceReferenceId);
+        await dbContext.CreditNotes.AddAsync(creditNote, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return creditNote.Id;
+    }
+
+    public async Task<Guid> CreateDebitNoteAsync(
+        CounterpartyType counterpartyType,
+        Guid counterpartyId,
+        decimal amount,
+        string? notes,
+        string? sourceReferenceType = null,
+        Guid? sourceReferenceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reference = await documentNumberService.NextAsync(ReferenceTypes.DebitNote, ReferenceTypes.DebitNote, cancellationToken);
+        var debitNote = new DebitNote(reference, counterpartyType, counterpartyId, amount, clock.UtcNow, notes, sourceReferenceType, sourceReferenceId);
+        await dbContext.DebitNotes.AddAsync(debitNote, cancellationToken);
+
+        if (counterpartyType == CounterpartyType.Customer)
+        {
+            await dbContext.AccountsReceivableEntries.AddAsync(
+                new AccountsReceivableEntry(counterpartyId, ReferenceTypes.DebitNote, debitNote.Id, amount, clock.UtcNow),
+                cancellationToken);
+        }
+        else
+        {
+            await dbContext.AccountsPayableEntries.AddAsync(
+                new AccountsPayableEntry(counterpartyId, ReferenceTypes.DebitNote, debitNote.Id, amount, clock.UtcNow),
+                cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return debitNote.Id;
+    }
+
+    public async Task AllocateCreditNoteToArAsync(Guid creditNoteId, Guid arEntryId, decimal amount, CancellationToken cancellationToken = default)
+    {
+        var creditNote = await dbContext.CreditNotes.Include(x => x.Allocations).FirstOrDefaultAsync(x => x.Id == creditNoteId, cancellationToken)
+                         ?? throw new NotFoundException("Credit note not found.");
+
+        if (creditNote.CounterpartyType != CounterpartyType.Customer)
+        {
+            throw new DomainValidationException("Credit note is not for a customer.");
+        }
+
+        var ar = await dbContext.AccountsReceivableEntries.FirstOrDefaultAsync(x => x.Id == arEntryId, cancellationToken)
+                 ?? throw new NotFoundException("AR entry not found.");
+
+        if (ar.CustomerId != creditNote.CounterpartyId)
+        {
+            throw new DomainValidationException("AR entry does not belong to this customer.");
+        }
+
+        if (amount <= 0)
+        {
+            throw new DomainValidationException("Allocation amount must be positive.");
+        }
+
+        if (amount > ar.Outstanding)
+        {
+            throw new DomainValidationException("Allocation exceeds outstanding amount.");
+        }
+
+        var allocation = creditNote.AllocateToAr(ar.Id, amount);
+        dbContext.DbContext.Add(allocation);
+        ar.ApplyPayment(amount);
+        await MarkInvoicePaidIfSettledAsync(ar, cancellationToken);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AllocateCreditNoteToApAsync(Guid creditNoteId, Guid apEntryId, decimal amount, CancellationToken cancellationToken = default)
+    {
+        var creditNote = await dbContext.CreditNotes.Include(x => x.Allocations).FirstOrDefaultAsync(x => x.Id == creditNoteId, cancellationToken)
+                         ?? throw new NotFoundException("Credit note not found.");
+
+        if (creditNote.CounterpartyType != CounterpartyType.Supplier)
+        {
+            throw new DomainValidationException("Credit note is not for a supplier.");
+        }
+
+        var ap = await dbContext.AccountsPayableEntries.FirstOrDefaultAsync(x => x.Id == apEntryId, cancellationToken)
+                 ?? throw new NotFoundException("AP entry not found.");
+
+        if (ap.SupplierId != creditNote.CounterpartyId)
+        {
+            throw new DomainValidationException("AP entry does not belong to this supplier.");
+        }
+
+        if (amount <= 0)
+        {
+            throw new DomainValidationException("Allocation amount must be positive.");
+        }
+
+        if (amount > ap.Outstanding)
+        {
+            throw new DomainValidationException("Allocation exceeds outstanding amount.");
+        }
+
+        var allocation = creditNote.AllocateToAp(ap.Id, amount);
+        dbContext.DbContext.Add(allocation);
+        ap.ApplyPayment(amount);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AutoAllocateCreditNoteAsync(Guid creditNoteId, CancellationToken cancellationToken = default)
+    {
+        var creditNote = await dbContext.CreditNotes.Include(x => x.Allocations).FirstOrDefaultAsync(x => x.Id == creditNoteId, cancellationToken)
+                         ?? throw new NotFoundException("Credit note not found.");
+
+        if (creditNote.RemainingAmount <= 0)
+        {
+            return;
+        }
+
+        if (creditNote.CounterpartyType == CounterpartyType.Customer)
+        {
+            var arEntries = await dbContext.AccountsReceivableEntries
+                .Where(x => x.CustomerId == creditNote.CounterpartyId && x.Outstanding > 0)
+                .OrderBy(x => x.PostedAt)
+                .ToListAsync(cancellationToken);
+
+            foreach (var ar in arEntries)
+            {
+                if (creditNote.RemainingAmount <= 0)
+                {
+                    break;
+                }
+
+                var allocate = Math.Min(ar.Outstanding, creditNote.RemainingAmount);
+                var allocation = creditNote.AllocateToAr(ar.Id, allocate);
+                dbContext.DbContext.Add(allocation);
+                ar.ApplyPayment(allocate);
+                await MarkInvoicePaidIfSettledAsync(ar, cancellationToken);
+            }
+        }
+        else
+        {
+            var apEntries = await dbContext.AccountsPayableEntries
+                .Where(x => x.SupplierId == creditNote.CounterpartyId && x.Outstanding > 0)
+                .OrderBy(x => x.PostedAt)
+                .ToListAsync(cancellationToken);
+
+            foreach (var ap in apEntries)
+            {
+                if (creditNote.RemainingAmount <= 0)
+                {
+                    break;
+                }
+
+                var allocate = Math.Min(ap.Outstanding, creditNote.RemainingAmount);
+                var allocation = creditNote.AllocateToAp(ap.Id, allocate);
+                dbContext.DbContext.Add(allocation);
+                ap.ApplyPayment(allocate);
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task MarkInvoicePaidIfSettledAsync(AccountsReceivableEntry ar, CancellationToken cancellationToken)
+    {
+        if (ar.Outstanding > 0 || ar.ReferenceType != ReferenceTypes.SalesInvoice)
+        {
+            return;
+        }
+
+        var invoice = await dbContext.SalesInvoices.FirstOrDefaultAsync(x => x.Id == ar.ReferenceId, cancellationToken);
+        invoice?.MarkPaid();
+    }
+
+    private async Task EnsureCurrencyIsActiveAsync(string currencyCode, CancellationToken cancellationToken)
+    {
+        var resolvedCurrencyCode = string.IsNullOrWhiteSpace(currencyCode)
+            ? throw new DomainValidationException("Currency code is required.")
+            : currencyCode.Trim().ToUpperInvariant();
+
+        var currencyExists = await dbContext.Currencies.AsNoTracking()
+            .AnyAsync(x => x.Code == resolvedCurrencyCode && x.IsActive, cancellationToken);
+        if (!currencyExists)
+        {
+            throw new DomainValidationException("Selected currency is invalid or inactive.");
+        }
+    }
+}
