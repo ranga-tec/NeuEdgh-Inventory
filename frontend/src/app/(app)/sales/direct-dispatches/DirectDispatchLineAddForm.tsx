@@ -35,6 +35,7 @@ export function DirectDispatchLineAddForm({
   const [serials, setSerials] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedItem = items.find((item) => item.id === itemId);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,17 +84,35 @@ export function DirectDispatchLineAddForm({
           <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} inputMode="decimal" required />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Batch (optional)</label>
+          <label className="mb-1 block text-sm font-medium">
+            {selectedItem?.trackingType === 4 ? "Batch (required for batch + expiry)" : "Batch (optional)"}
+          </label>
           <Input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} />
         </div>
       </div>
+
+      {selectedItem ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+          {selectedItem.trackingType === 3 || selectedItem.trackingType === 4
+            ? "Expiry item: use FEFO. Pick the earliest valid expiry layer shown below before posting."
+            : selectedItem.trackingType === 2
+              ? "Batch item: use FIFO within the selected batch."
+              : "Non-expiry item: use FIFO."}
+        </div>
+      ) : null}
 
       <div>
         <label className="mb-1 block text-sm font-medium">Serials (optional)</label>
         <Textarea value={serials} onChange={(e) => setSerials(e.target.value)} placeholder="One per line or comma-separated" />
       </div>
 
-      <LineStockInsight warehouses={warehouses} warehouseId={warehouseId} itemId={itemId} batchNumber={batchNumber} />
+      <LineStockInsight
+        warehouses={warehouses}
+        warehouseId={warehouseId}
+        itemId={itemId}
+        batchNumber={batchNumber}
+        trackingType={selectedItem?.trackingType}
+      />
 
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">

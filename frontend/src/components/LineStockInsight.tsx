@@ -6,6 +6,18 @@ import { Select, Table } from "@/components/ui";
 
 type WarehouseRef = { id: string; code: string; name: string };
 type OnHandRowDto = { warehouseId: string; itemId: string; batchNumber?: string | null; onHand: number };
+type StockLayerDto = {
+  id: string;
+  warehouseId: string;
+  warehouseBinId?: string | null;
+  itemId: string;
+  remainingQuantity: number;
+  unitCost: number;
+  receivedAt: string;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
+  status: number;
+};
 type ViewMode = "total" | "warehouse" | "batch" | "warehouse-batch";
 type DisplayRow = { key: string; warehouseId?: string; batchLabel?: string; onHand: number };
 
@@ -30,17 +42,31 @@ function warehouseLabel(warehouseById: Map<string, WarehouseRef>, warehouseId?: 
   return `${warehouse.code} - ${warehouse.name}`;
 }
 
+function issueMethodLabel(trackingType?: number) {
+  if (trackingType === 3) return "FEFO - use the earliest expiry date first.";
+  if (trackingType === 4) return "FEFO by batch - choose the batch with earliest expiry first.";
+  if (trackingType === 2) return "FIFO by batch - use the oldest valid batch first.";
+  if (trackingType === 1) return "Serial tracked - select the exact serial numbers.";
+  return "FIFO - use the oldest stock first.";
+}
+
+function isExpiryTracked(trackingType?: number) {
+  return trackingType === 3 || trackingType === 4;
+}
+
 export function LineStockInsight({
   warehouses,
   warehouseId,
   itemId,
   batchNumber,
+  trackingType,
   countedQuantity,
 }: {
   warehouses: WarehouseRef[];
   warehouseId?: string;
   itemId?: string;
   batchNumber?: string;
+  trackingType?: number;
   countedQuantity?: string;
 }) {
   const warehouseOptions = useMemo(
@@ -51,6 +77,7 @@ export function LineStockInsight({
 
   const [viewMode, setViewMode] = useState<ViewMode>("warehouse");
   const [rows, setRows] = useState<OnHandRowDto[] | null>(null);
+  const [layers, setLayers] = useState<StockLayerDto[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +86,7 @@ export function LineStockInsight({
   useEffect(() => {
     if (!itemId) {
       setRows(null);
+      setLayers(null);
       setBusy(false);
       setError(null);
       return;
@@ -75,13 +103,25 @@ export function LineStockInsight({
           qs.set("batchNumber", normalizedBatch);
         }
 
-        const data = await apiGet<OnHandRowDto[]>(`inventory/onhand?${qs.toString()}`);
+        const [data, layerData] = await Promise.all([
+          apiGet<OnHandRowDto[]>(`inventory/onhand?${qs.toString()}`),
+          isExpiryTracked(trackingType)
+            ? apiGet<StockLayerDto[]>(
+                `inventory/stock-layers?${new URLSearchParams({
+                  itemId,
+                  ...(warehouseId ? { warehouseId } : {}),
+                }).toString()}`,
+              )
+            : Promise.resolve([]),
+        ]);
         if (!ignore) {
           setRows(data);
+          setLayers(layerData);
         }
       } catch (err) {
         if (!ignore) {
           setRows([]);
+          setLayers([]);
           setError(err instanceof Error ? err.message : String(err));
         }
       } finally {
@@ -95,7 +135,7 @@ export function LineStockInsight({
       ignore = true;
       window.clearTimeout(handle);
     };
-  }, [itemId, normalizedBatch]);
+  }, [itemId, normalizedBatch, trackingType, warehouseId]);
 
   const totalOnHand = useMemo(() => (rows ?? []).reduce((sum, row) => sum + row.onHand, 0), [rows]);
   const warehouseOnHand = useMemo(
@@ -180,6 +220,9 @@ export function LineStockInsight({
           <div className="mt-1 text-xs text-zinc-500">
             Warehouse: {warehouseLabel(warehouseById, warehouseId)} - Batch filter: {normalizedBatch || "All batches"}
           </div>
+          <div className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+            Issue method: {issueMethodLabel(trackingType)}
+          </div>
         </div>
         <div className="w-full sm:w-52">
           <Select value={viewMode} onChange={(e) => setViewMode(e.target.value as ViewMode)} className="text-xs">
@@ -254,6 +297,47 @@ export function LineStockInsight({
             </Table>
           </div>
         )
+      ) : null}
+
+      {!busy && isExpiryTracked(trackingType) ? (
+        <div className="mt-3 overflow-auto rounded-lg border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+            FEFO expiry layers
+          </div>
+          <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            Use the first valid row for dispatch/POS. Expired layers are not shown by the allocation service.
+          </div>
+          {layers && layers.length > 0 ? (
+            <Table className="mt-2 text-xs">
+              <thead>
+                <tr className="border-b border-amber-200 text-left uppercase tracking-wide text-amber-800 dark:border-amber-900/50 dark:text-amber-200">
+                  <th className="py-2 pr-3">Expiry</th>
+                  <th className="py-2 pr-3">Batch</th>
+                  <th className="py-2 pr-3">Remaining</th>
+                  <th className="py-2 pr-3">Unit Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {layers
+                  .filter((layer) => layer.remainingQuantity > 0)
+                  .sort((a, b) => (a.expiryDate ?? "9999-12-31").localeCompare(b.expiryDate ?? "9999-12-31"))
+                  .slice(0, 8)
+                  .map((layer) => (
+                    <tr key={layer.id} className="border-b border-amber-100 dark:border-amber-950">
+                      <td className="py-2 pr-3 font-medium">{layer.expiryDate ?? "No expiry"}</td>
+                      <td className="py-2 pr-3">{layer.batchNumber ?? "No batch"}</td>
+                      <td className="py-2 pr-3">{number(layer.remainingQuantity)}</td>
+                      <td className="py-2 pr-3">{number(layer.unitCost)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </Table>
+          ) : (
+            <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              No stock layers found. Receive expiry-tracked stock through stock layers/expiry receiving before relying on FEFO visibility.
+            </div>
+          )}
+        </div>
       ) : null}
     </div>
   );

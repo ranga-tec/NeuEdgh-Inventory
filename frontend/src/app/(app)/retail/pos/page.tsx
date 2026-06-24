@@ -5,12 +5,12 @@ const actions = [
   {
     href: "/sales/invoices",
     title: "Sales invoices",
-    description: "Create and post customer invoices for normal supermarket sales.",
+    description: "Create and post customer invoices for normal supermarket sales. Expiry items should be issued using FEFO stock guidance.",
   },
   {
     href: "/sales/direct-dispatches",
     title: "Counter stock issues",
-    description: "Issue stock directly from the selling warehouse when a separate dispatch record is needed.",
+    description: "Issue stock directly from the selling warehouse. The dispatch line screen shows FIFO/FEFO and expiry layers.",
   },
   {
     href: "/retail/utilities",
@@ -39,10 +39,12 @@ export default function CounterSalesPage() {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted-foreground)]">
           Use sales invoices for ordinary goods, utility payments for airtime and bill collections, and customer
           returns for refunds or exchanges. A dedicated barcode-first POS screen can be layered on top of these
-          transaction APIs next.
+          transaction APIs next. Expiry-tracked items should be sold FEFO: earliest valid expiry first.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <SecondaryLink href="/sales/invoices">Open sales invoices</SecondaryLink>
+          <SecondaryLink href="/inventory/expiry">Check expiry stock</SecondaryLink>
+          <SecondaryLink href="/inventory/replenishment">Open replenishment</SecondaryLink>
           <SecondaryLink href="/retail/utilities">Open utilities</SecondaryLink>
         </div>
       </Card>

@@ -7,6 +7,8 @@ import { Button, Input, Select } from "@/components/ui";
 import {
   formatLedgerAccountOptionLabel,
   itemTypes,
+  issueMethodLabel,
+  isExpiryTracked,
   trackingTypes,
   type BrandDto,
   type CategoryDto,
@@ -146,7 +148,7 @@ export function ItemCreateForm({
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Tracking</label>
+          <label className="mb-1 block text-sm font-medium">Tracking / Expiry</label>
           <Select
             value={String(trackingType)}
             onChange={(e) => setTrackingType(Number(e.target.value))}
@@ -157,6 +159,10 @@ export function ItemCreateForm({
               </option>
             ))}
           </Select>
+          <div className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Issue method: {issueMethodLabel[trackingType] ?? "FIFO"}
+            {isExpiryTracked(trackingType) ? " - expiry date is required when stock is received." : ""}
+          </div>
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium">UoM</label>

@@ -89,9 +89,11 @@ export const itemTypes = [
 ];
 
 export const trackingTypes = [
-  { value: 0, label: "None" },
-  { value: 1, label: "Serial" },
-  { value: 2, label: "Batch" },
+  { value: 0, label: "None - no expiry or batch" },
+  { value: 1, label: "Serial - unique units" },
+  { value: 2, label: "Batch - batch only" },
+  { value: 3, label: "Expiry - FEFO by expiry date" },
+  { value: 4, label: "Batch + Expiry - batch with FEFO" },
 ];
 
 export const itemTypeLabel: Record<number, string> = {
@@ -104,7 +106,21 @@ export const trackingLabel: Record<number, string> = {
   0: "None",
   1: "Serial",
   2: "Batch",
+  3: "Expiry",
+  4: "Batch + Expiry",
 };
+
+export const issueMethodLabel: Record<number, string> = {
+  0: "FIFO",
+  1: "Serial",
+  2: "FIFO by batch",
+  3: "FEFO",
+  4: "FEFO by batch",
+};
+
+export function isExpiryTracked(trackingType: number): boolean {
+  return trackingType === 3 || trackingType === 4;
+}
 
 export function formatLedgerAccountOptionLabel(account: LedgerAccountOptionDto): string {
   const flags: string[] = [];

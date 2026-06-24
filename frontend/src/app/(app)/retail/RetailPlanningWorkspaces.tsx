@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button, Card, Input, SecondaryButton, Table } from "@/components/ui";
 import { apiGet, apiPost, apiPostNoContent } from "@/lib/api-client";
 
-type ItemDto = { id: string; sku: string; name: string; barcode?: string | null; categoryId?: string | null };
+type ItemDto = { id: string; sku: string; name: string; trackingType: number; barcode?: string | null; categoryId?: string | null };
 type WarehouseDto = { id: string; code: string; name: string };
 type PackDto = {
   id: string;
@@ -90,6 +90,19 @@ const promotionStatusLabels: Record<number, string> = {
 function itemLabel(items: ItemDto[], id: string): string {
   const item = items.find((x) => x.id === id);
   return item ? `${item.sku} - ${item.name}` : id;
+}
+
+function trackingLabel(trackingType: number): string {
+  if (trackingType === 3) return "Expiry / FEFO";
+  if (trackingType === 4) return "Batch + Expiry / FEFO";
+  if (trackingType === 2) return "Batch / FIFO";
+  if (trackingType === 1) return "Serial";
+  return "FIFO";
+}
+
+function itemTrackingLabel(items: ItemDto[], id: string): string {
+  const item = items.find((x) => x.id === id);
+  return item ? trackingLabel(item.trackingType) : "-";
 }
 
 function money(value: number): string {
@@ -416,8 +429,8 @@ export function ReplenishmentWorkspace() {
       </Card>
       <ErrorText message={error} />
       <Card className="overflow-x-auto">
-        <Table><thead><tr><th>Item</th><th>On Hand</th><th>Open PO</th><th>Reorder Point</th><th>Configured Qty</th><th>Recommended</th><th>Pack Qty</th></tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.itemId}><td>{itemLabel(items, row.itemId)}</td><td>{row.onHand}</td><td>{row.openPurchaseQuantity}</td><td>{row.reorderPoint}</td><td>{row.reorderQuantity}</td><td className={row.recommendedQuantity > 0 ? "font-semibold text-amber-700" : ""}>{row.recommendedQuantity}</td><td>{row.recommendedPackQuantity ?? "-"}</td></tr>)}</tbody>
+        <Table><thead><tr><th>Item</th><th>Issue</th><th>On Hand</th><th>Open PO</th><th>Reorder Point</th><th>Configured Qty</th><th>Recommended</th><th>Pack Qty</th></tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.itemId}><td>{itemLabel(items, row.itemId)}</td><td>{itemTrackingLabel(items, row.itemId)}</td><td>{row.onHand}</td><td>{row.openPurchaseQuantity}</td><td>{row.reorderPoint}</td><td>{row.reorderQuantity}</td><td className={row.recommendedQuantity > 0 ? "font-semibold text-amber-700" : ""}>{row.recommendedQuantity}</td><td>{row.recommendedPackQuantity ?? "-"}</td></tr>)}</tbody>
         </Table>
       </Card>
     </div>
@@ -428,6 +441,14 @@ export function ExpiryWorkspace() {
   const [warehouses, setWarehouses] = useState<WarehouseDto[]>([]);
   const [items, setItems] = useState<ItemDto[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
+  const [receiveForm, setReceiveForm] = useState({
+    warehouseId: "",
+    itemId: "",
+    quantity: "1",
+    unitCost: "0",
+    batchNumber: "",
+    expiryDate: "",
+  });
   const [nearExpiry, setNearExpiry] = useState<ExpiryLayer[]>([]);
   const [expired, setExpired] = useState<ExpiryLayer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -453,6 +474,30 @@ export function ExpiryWorkspace() {
     await load();
   }
 
+  async function receiveExpiryStock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    try {
+      await apiPost("inventory/stock-layers", {
+        warehouseId: receiveForm.warehouseId,
+        warehouseBinId: null,
+        itemId: receiveForm.itemId,
+        quantity: Number(receiveForm.quantity),
+        unitCost: Number(receiveForm.unitCost),
+        referenceType: "ExpiryOpeningStock",
+        referenceId: "00000000-0000-0000-0000-000000000001",
+        referenceLineId: null,
+        batchNumber: receiveForm.batchNumber || null,
+        expiryDate: receiveForm.expiryDate || null,
+      });
+      setWarehouseId(receiveForm.warehouseId);
+      setReceiveForm((current) => ({ ...current, quantity: "1", unitCost: "0", batchNumber: "", expiryDate: "" }));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to receive expiry stock.");
+    }
+  }
+
   function tableRows(rows: ExpiryLayer[], allowWriteOff: boolean) {
     return rows.map((row) => <tr key={row.id}><td>{itemLabel(items, row.itemId)}</td><td>{row.batchNumber ?? "-"}</td><td>{row.expiryDate ?? "-"}</td><td>{row.remainingQuantity}</td><td>{money(row.unitCost)}</td><td>{allowWriteOff ? <SecondaryButton type="button" onClick={() => writeOff(row)}>Write Off</SecondaryButton> : null}</td></tr>);
   }
@@ -465,6 +510,42 @@ export function ExpiryWorkspace() {
           <label className="w-full max-w-sm space-y-1 text-sm"><span className="font-medium">Warehouse</span><WarehouseSelect warehouses={warehouses} value={warehouseId} onChange={setWarehouseId} /></label>
           <Button type="button" onClick={load}>Load Expiry Stock</Button>
         </div>
+      </Card>
+      <Card>
+        <div className="text-lg font-semibold">Receive Expiry Stock Layer</div>
+        <form className="mt-4 grid gap-3 md:grid-cols-6" onSubmit={receiveExpiryStock}>
+          <label className="space-y-1 text-sm md:col-span-2">
+            <span className="font-medium">Warehouse</span>
+            <WarehouseSelect warehouses={warehouses} value={receiveForm.warehouseId} onChange={(value) => setReceiveForm({ ...receiveForm, warehouseId: value })} />
+          </label>
+          <label className="space-y-1 text-sm md:col-span-2">
+            <span className="font-medium">Expiry item</span>
+            <ItemSelect
+              items={items.filter((item) => item.trackingType === 3 || item.trackingType === 4)}
+              value={receiveForm.itemId}
+              onChange={(value) => setReceiveForm({ ...receiveForm, itemId: value })}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Qty</span>
+            <Input type="number" min="0.0001" step="0.0001" value={receiveForm.quantity} onChange={(event) => setReceiveForm({ ...receiveForm, quantity: event.target.value })} required />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Unit cost</span>
+            <Input type="number" min="0" step="0.01" value={receiveForm.unitCost} onChange={(event) => setReceiveForm({ ...receiveForm, unitCost: event.target.value })} required />
+          </label>
+          <label className="space-y-1 text-sm md:col-span-2">
+            <span className="font-medium">Batch</span>
+            <Input value={receiveForm.batchNumber} onChange={(event) => setReceiveForm({ ...receiveForm, batchNumber: event.target.value })} />
+          </label>
+          <label className="space-y-1 text-sm md:col-span-2">
+            <span className="font-medium">Expiry date</span>
+            <Input type="date" value={receiveForm.expiryDate} onChange={(event) => setReceiveForm({ ...receiveForm, expiryDate: event.target.value })} required />
+          </label>
+          <div className="flex items-end md:col-span-2">
+            <Button>Receive Layer</Button>
+          </div>
+        </form>
       </Card>
       <ErrorText message={error} />
       <Card className="overflow-x-auto"><div className="mb-2 font-semibold">Expired Stock</div><Table><thead><tr><th>Item</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Unit Cost</th><th></th></tr></thead><tbody>{tableRows(expired, true)}</tbody></Table></Card>
