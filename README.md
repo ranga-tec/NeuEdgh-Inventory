@@ -18,6 +18,10 @@ General inventory and retail ERP system adapted for supermarket operations.
 - Finance: chart of accounts, AR/AP, payments, petty cash funds, credit notes, and debit notes
 - Reporting: stock ledger, AR/AP aging, tax summary, sales analysis, purchase analysis, supplier performance, and costing
 
+## Documentation
+
+- [Supermarket ERP system documentation](docs/neuedge-supermarket-erp-system-documentation.md)
+
 ## Notes
 
 - Service-repair frontend routes and API controllers have been removed from the copied ISS surface.
