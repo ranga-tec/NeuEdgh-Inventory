@@ -28,6 +28,17 @@ public static class AppPermissions
     public const string RetailUtilityPaymentCreate = "Retail.UtilityPayment.Create";
     public const string RetailUtilityPaymentPost = "Retail.UtilityPayment.Post";
     public const string RetailUtilityPaymentVoid = "Retail.UtilityPayment.Void";
+    public const string RetailPackView = "Retail.Pack.View";
+    public const string RetailPackCreate = "Retail.Pack.Create";
+    public const string RetailBundleView = "Retail.Bundle.View";
+    public const string RetailBundleCreate = "Retail.Bundle.Create";
+    public const string RetailPromotionView = "Retail.Promotion.View";
+    public const string RetailPromotionCreate = "Retail.Promotion.Create";
+    public const string RetailPromotionApprove = "Retail.Promotion.Approve";
+    public const string InventoryExpiryView = "Inventory.Expiry.View";
+    public const string InventoryExpiryWriteOff = "Inventory.Expiry.WriteOff";
+    public const string InventoryReplenishmentView = "Inventory.Replenishment.View";
+    public const string InventoryReplenishmentCreate = "Inventory.Replenishment.Create";
     public const string ServiceExpenseClaimView = "Service.ExpenseClaim.View";
     public const string ServiceExpenseClaimCreate = "Service.ExpenseClaim.Create";
     public const string ServiceExpenseClaimEdit = "Service.ExpenseClaim.Edit";
@@ -150,6 +161,17 @@ public static class AppPermissions
         new(RetailUtilityPaymentCreate, "Retail / Utility Payments", "Create", "Create utility payments", "Create airtime top-up or bill-payment transactions."),
         new(RetailUtilityPaymentPost, "Retail / Utility Payments", "Post", "Post utility payments", "Confirm collected utility payments."),
         new(RetailUtilityPaymentVoid, "Retail / Utility Payments", "Void", "Void utility payments", "Void utility payments that should not be processed."),
+        new(RetailPackView, "Retail / Pack Items", "View", "View pack items", "Open and review pack barcodes, pack sizes, and pack prices."),
+        new(RetailPackCreate, "Retail / Pack Items", "Create", "Create pack items", "Create and update pack barcode definitions."),
+        new(RetailBundleView, "Retail / Bundles", "View", "View bundles", "Open and review retail bundle definitions and availability."),
+        new(RetailBundleCreate, "Retail / Bundles", "Create", "Create bundles", "Create and update retail bundle definitions."),
+        new(RetailPromotionView, "Retail / Promotions", "View", "View promotions", "Open and review retail promotion rules."),
+        new(RetailPromotionCreate, "Retail / Promotions", "Create", "Create promotions", "Create, submit, pause, and cancel retail promotions."),
+        new(RetailPromotionApprove, "Retail / Promotions", "Approve", "Approve promotions", "Approve retail promotions before activation."),
+        new(InventoryExpiryView, "Inventory / Expiry", "View", "View expiry stock", "Open near-expiry and expired-stock workspaces."),
+        new(InventoryExpiryWriteOff, "Inventory / Expiry", "Write Off", "Write off expired stock", "Create, approve, and post expiry write-offs."),
+        new(InventoryReplenishmentView, "Inventory / Replenishment", "View", "View replenishment", "Open replenishment recommendations and runs."),
+        new(InventoryReplenishmentCreate, "Inventory / Replenishment", "Create", "Create replenishment", "Create replenishment runs and purchase requisitions."),
         new(ServiceExpenseClaimView, "Service / Expense Claims", "View", "View claims", "Open and review service expense claims."),
         new(ServiceExpenseClaimCreate, "Service / Expense Claims", "Create", "Create claims", "Create service expense claims against job orders."),
         new(ServiceExpenseClaimEdit, "Service / Expense Claims", "Edit", "Edit claims", "Add, update, or remove draft service expense claim lines."),

@@ -37,6 +37,9 @@ public interface IIssDbContext
     DbSet<ReorderSetting> ReorderSettings { get; }
 
     DbSet<InventoryMovement> InventoryMovements { get; }
+    DbSet<StockLayer> StockLayers { get; }
+    DbSet<ExpiryWriteOff> ExpiryWriteOffs { get; }
+    DbSet<ReplenishmentRun> ReplenishmentRuns { get; }
     DbSet<StockAdjustment> StockAdjustments { get; }
     DbSet<StockTransfer> StockTransfers { get; }
 
@@ -56,6 +59,9 @@ public interface IIssDbContext
     DbSet<CustomerReturn> CustomerReturns { get; }
 
     DbSet<UtilityPayment> UtilityPayments { get; }
+    DbSet<ItemPack> ItemPacks { get; }
+    DbSet<Bundle> Bundles { get; }
+    DbSet<Promotion> Promotions { get; }
 
     DbSet<EquipmentUnit> EquipmentUnits { get; }
     DbSet<ServiceContract> ServiceContracts { get; }

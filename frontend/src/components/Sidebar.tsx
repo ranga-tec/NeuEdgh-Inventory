@@ -64,13 +64,18 @@ const sections: NavSection[] = [
     items: [
       { href: "/retail/pos", label: "Counter Sales" },
       { href: "/retail/utilities", label: "Airtime & Bill Pay" },
+      { href: "/retail/packs", label: "Pack Items" },
+      { href: "/retail/bundles", label: "Bundles" },
+      { href: "/retail/promotions", label: "Promotions" },
     ],
   },
   {
     title: "Inventory",
     items: [
       { href: "/inventory/availability", label: "Inventory Availability" },
+      { href: "/inventory/expiry", label: "Expiry Handling" },
       { href: "/inventory/onhand", label: "On Hand" },
+      { href: "/inventory/replenishment", label: "Replenishment" },
       { href: "/inventory/reorder-alerts", label: "Reorder Alerts" },
       { href: "/inventory/stock-adjustments", label: "Stock Adjustments" },
       { href: "/inventory/stock-transfers", label: "Stock Transfers" },

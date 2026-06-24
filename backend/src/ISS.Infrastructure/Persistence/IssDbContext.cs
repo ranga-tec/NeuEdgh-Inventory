@@ -49,6 +49,9 @@ public sealed class IssDbContext(
     public DbSet<ReorderSetting> ReorderSettings => Set<ReorderSetting>();
 
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
+    public DbSet<StockLayer> StockLayers => Set<StockLayer>();
+    public DbSet<ExpiryWriteOff> ExpiryWriteOffs => Set<ExpiryWriteOff>();
+    public DbSet<ReplenishmentRun> ReplenishmentRuns => Set<ReplenishmentRun>();
     public DbSet<StockAdjustment> StockAdjustments => Set<StockAdjustment>();
     public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
 
@@ -68,6 +71,9 @@ public sealed class IssDbContext(
     public DbSet<CustomerReturn> CustomerReturns => Set<CustomerReturn>();
 
     public DbSet<UtilityPayment> UtilityPayments => Set<UtilityPayment>();
+    public DbSet<ItemPack> ItemPacks => Set<ItemPack>();
+    public DbSet<Bundle> Bundles => Set<Bundle>();
+    public DbSet<Promotion> Promotions => Set<Promotion>();
 
     public DbSet<EquipmentUnit> EquipmentUnits => Set<EquipmentUnit>();
     public DbSet<ServiceContract> ServiceContracts => Set<ServiceContract>();
@@ -319,6 +325,76 @@ public sealed class IssDbContext(
             entity.HasOne<PaymentType>().WithMany().HasForeignKey(x => x.PaymentTypeId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        builder.Entity<ItemPack>(entity =>
+        {
+            entity.HasIndex(x => new { x.ItemId, x.Code }).IsUnique();
+            entity.HasIndex(x => x.Barcode).IsUnique();
+            entity.HasIndex(x => new { x.ItemId, x.IsActive });
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Barcode).HasMaxLength(128);
+            entity.Property(x => x.BaseQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitOfMeasure).HasMaxLength(32);
+            entity.Property(x => x.Price).HasPrecision(18, 4);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<TaxCode>().WithMany().HasForeignKey(x => x.TaxCodeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Bundle>(entity =>
+        {
+            entity.HasIndex(x => new { x.CompanyId, x.Sku }).IsUnique();
+            entity.HasIndex(x => x.Barcode).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.IsActive });
+            entity.Property(x => x.Sku).HasMaxLength(64);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Barcode).HasMaxLength(128);
+            entity.Property(x => x.Price).HasPrecision(18, 4);
+            entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ItemCategory>().WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<TaxCode>().WithMany().HasForeignKey(x => x.TaxCodeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Components).WithOne().HasForeignKey(x => x.BundleId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<BundleComponent>(entity =>
+        {
+            entity.HasIndex(x => new { x.BundleId, x.ItemId });
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitOfMeasure).HasMaxLength(32);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Promotion>(entity =>
+        {
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.Status, x.StartsAt, x.EndsAt });
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.Description).HasMaxLength(512);
+            entity.Property(x => x.MaxDiscountAmount).HasPrecision(18, 4);
+            entity.Property(x => x.CancelReason).HasMaxLength(512);
+            entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PromotionId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<PromotionLine>(entity =>
+        {
+            entity.HasIndex(x => x.ItemId);
+            entity.HasIndex(x => x.ItemPackId);
+            entity.HasIndex(x => x.BundleId);
+            entity.HasIndex(x => x.CategoryId);
+            entity.HasIndex(x => x.BrandId);
+            entity.Property(x => x.BuyQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.GetQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.DiscountPercent).HasPrecision(18, 4);
+            entity.Property(x => x.DiscountAmount).HasPrecision(18, 4);
+            entity.Property(x => x.SpecialPrice).HasPrecision(18, 4);
+            entity.Property(x => x.MinimumBasketAmount).HasPrecision(18, 4);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ItemPack>().WithMany().HasForeignKey(x => x.ItemPackId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Bundle>().WithMany().HasForeignKey(x => x.BundleId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ItemCategory>().WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Brand>().WithMany().HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.GetItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         builder.Entity<ReorderSetting>(entity =>
         {
             entity.HasIndex(x => new { x.WarehouseId, x.ItemId }).IsUnique();
@@ -341,6 +417,67 @@ public sealed class IssDbContext(
             entity.HasIndex(x => new { x.ItemId, x.SerialNumber });
             entity.HasIndex(x => new { x.ItemId, x.BatchNumber });
             entity.HasOne<WarehouseBin>().WithMany().HasForeignKey(x => x.WarehouseBinId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<StockLayer>(entity =>
+        {
+            entity.HasIndex(x => new { x.WarehouseId, x.ItemId, x.Status, x.ExpiryDate });
+            entity.HasIndex(x => new { x.WarehouseId, x.WarehouseBinId, x.ItemId });
+            entity.HasIndex(x => new { x.ItemId, x.BatchNumber });
+            entity.Property(x => x.OriginalQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.RemainingQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.ReferenceType).HasMaxLength(64);
+            entity.Property(x => x.BatchNumber).HasMaxLength(128);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<WarehouseBin>().WithMany().HasForeignKey(x => x.WarehouseBinId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ExpiryWriteOff>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => new { x.WarehouseId, x.Status });
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.VoidReason).HasMaxLength(512);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.ExpiryWriteOffId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<ExpiryWriteOffLine>(entity =>
+        {
+            entity.HasIndex(x => x.StockLayerId);
+            entity.HasIndex(x => x.ItemId);
+            entity.Property(x => x.Quantity).HasPrecision(18, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(18, 4);
+            entity.Property(x => x.Reason).HasMaxLength(512);
+            entity.HasOne<StockLayer>().WithMany().HasForeignKey(x => x.StockLayerId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ReplenishmentRun>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            entity.HasIndex(x => new { x.WarehouseId, x.Status, x.CalculatedAt });
+            entity.Property(x => x.Number).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PurchaseRequisition>().WithMany().HasForeignKey(x => x.PurchaseRequisitionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.ReplenishmentRunId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<ReplenishmentRunLine>(entity =>
+        {
+            entity.HasIndex(x => x.ItemId);
+            entity.HasIndex(x => x.PreferredPackId);
+            entity.Property(x => x.OnHand).HasPrecision(18, 4);
+            entity.Property(x => x.OpenPurchaseQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.ReorderPoint).HasPrecision(18, 4);
+            entity.Property(x => x.ReorderQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.RecommendedQuantity).HasPrecision(18, 4);
+            entity.Property(x => x.RecommendedPackQuantity).HasPrecision(18, 4);
+            entity.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Supplier>().WithMany().HasForeignKey(x => x.PreferredSupplierId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ItemPack>().WithMany().HasForeignKey(x => x.PreferredPackId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<StockAdjustment>(entity =>

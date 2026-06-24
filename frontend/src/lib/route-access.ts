@@ -54,6 +54,11 @@ const permissionAccessRules: PermissionAccessRule[] = [
   { prefix: "/sales/invoices", permissions: ["Sales.Invoice.View"] },
   { prefix: "/sales/customer-returns", permissions: ["Sales.CustomerReturn.View"] },
   { prefix: "/retail/utilities", permissions: ["Retail.UtilityPayment.View"] },
+  { prefix: "/retail/packs", permissions: ["Retail.Pack.View"] },
+  { prefix: "/retail/bundles", permissions: ["Retail.Bundle.View"] },
+  { prefix: "/retail/promotions", permissions: ["Retail.Promotion.View"] },
+  { prefix: "/inventory/expiry", permissions: ["Inventory.Expiry.View"] },
+  { prefix: "/inventory/replenishment", permissions: ["Inventory.Replenishment.View"] },
 ];
 
 const routeAccessRules: RouteAccessRule[] = [

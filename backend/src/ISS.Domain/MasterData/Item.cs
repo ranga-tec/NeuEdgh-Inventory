@@ -14,7 +14,16 @@ public enum TrackingType
 {
     None = 0,
     Serial = 1,
-    Batch = 2
+    Batch = 2,
+    Expiry = 3,
+    BatchAndExpiry = 4
+}
+
+public enum ItemIssueMethod
+{
+    Fifo = 1,
+    Fefo = 2,
+    Manual = 3
 }
 
 public sealed class Item : AuditableEntity
